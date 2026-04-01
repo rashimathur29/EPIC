@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPIC — Employee Productivity &amp; Insight Console</title>
+
+    <!-- Icons (third-party, CDN) -->
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!--
+        Application CSS — order is intentional:
+        tokens first (custom properties), then base reset,
+        then component-scoped files.
+        No @import chains — every file is a flat <link>.
+    -->
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/base.css">
+    <link rel="stylesheet" href="css/header.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/popover.css">
+</head>
+
+<body>
+
+<!-- ════════════════════════════════════════════════════════
+     TITLE BAR
+     Inline — NOT loaded via jQuery.load().
+     CSS  → css/header.css
+     JS   → js/header.js  (window controls only)
+
+     Layout (Teams-exact):
+     [icon][< >]  [────── Search ──────]  [···][Avatar●][─][□][×]
+════════════════════════════════════════════════════════ -->
+<header class="titlebar" role="banner">
+
+    <!-- Left: app icon + history nav -->
+    <div class="titlebar__left">
+        <div class="titlebar__app-icon" aria-hidden="true">
+            <img src="images/tab.png" alt="EPIC"
+                 onerror="this.style.display='none';
+                          this.nextElementSibling.style.display='flex'">
+            <i class="fas fa-bolt icon-fallback"></i>
+        </div>
+
+        <button class="titlebar__nav-btn"
+                title="Back"
+                aria-label="Go back"
+                onclick="history.back()">
+            <i class="fas fa-chevron-left" aria-hidden="true"></i>
+        </button>
+
+        <button class="titlebar__nav-btn"
+                title="Forward"
+                aria-label="Go forward"
+                onclick="history.forward()">
+            <i class="fas fa-chevron-right" aria-hidden="true"></i>
+        </button>
+    </div>
+
+    <!-- Centre: search -->
+    <div class="titlebar__search" role="search">
+        <div class="titlebar__search-inner">
+            <i class="fas fa-search titlebar__search-icon" aria-hidden="true"></i>
+            <input type="search"
+                   class="titlebar__search-input"
+                   placeholder="Search (Ctrl+E)"
+                   aria-label="Search"
+                   autocomplete="off"
+                   spellcheck="false">
+        </div>
+    </div>
+
+    <!-- Right: misc · avatar (Teams position) · window controls -->
+    <div class="titlebar__right">
+
+        <button class="titlebar__icon-btn"
+                title="More options"
+                aria-label="More options">
+            <i class="fas fa-ellipsis-h" aria-hidden="true"></i>
+        </button>
+
+        <!--
+            Avatar button — top-right, exactly like Teams.
+            Clicking triggers ProfilePopover in js/popover.js.
+            Initials are updated by js/app.js after user data
+            is injected from Rust via epic.js.
+        -->
+        <button class="titlebar__avatar-btn"
+                id="btn-profile"
+                title="Account and settings"
+                aria-label="Open account menu"
+                aria-haspopup="true"
+                aria-expanded="false">
+            <div class="titlebar__avatar-ring"
+                 id="titlebar-avatar-initials">RM</div>
+        </button>
+
+        <!-- Window controls — handled by js/header.js -->
+        <button class="titlebar__wc-btn"
+                id="btn-minimize"
+                title="Minimize"
+                aria-label="Minimize">
+            <i class="far fa-window-minimize" aria-hidden="true"></i>
+        </button>
+
+        <button class="titlebar__wc-btn"
+                id="btn-maximize"
+                title="Maximize"
+                aria-label="Maximize">
+            <i class="far fa-window-maximize" aria-hidden="true"></i>
+        </button>
+
+        <button class="titlebar__wc-btn titlebar__wc-btn--close"
+                id="btn-close"
+                title="Close"
+                aria-label="Close">
+            <i class="fas fa-times" aria-hidden="true"></i>
+        </button>
+
+    </div>
+</header>
+<!-- /titlebar -->
+
+
+<!-- ════════════════════════════════════════════════════════
+     PROFILE POPOVER
+     Positioned dynamically by js/popover.js under the avatar.
+     CSS → css/popover.css
+════════════════════════════════════════════════════════ -->
+<div id="profile-popover"
+     class="profile-popover"
+     role="menu"
+     aria-label="Account menu">
+
+    <div class="popover__header">
+        <div class="popover__avatar"
+             id="popover-avatar-initials"
+             aria-hidden="true">RM</div>
+        <div>
+            <p class="popover__name"  id="popover-user-name">Rashi Mathur</p>
+            <p class="popover__role"  id="popover-user-role">Developer</p>
+            <p class="popover__email" id="popover-user-email">rashi@company.com</p>
+        </div>
+    </div>
+
+    <div class="popover__status">
+        <button class="status-pill" aria-label="Set status">
+            <span class="status-pill__dot"    aria-hidden="true"></span>
+            <span>Available</span>
+            <i class="fas fa-chevron-down status-pill__chevron" aria-hidden="true"></i>
+        </button>
+    </div>
+
+    <nav class="popover__menu" aria-label="Account actions">
+
+        <button class="popover__item" id="popover-item-analytics" role="menuitem">
+            <i class="fas fa-chart-line" aria-hidden="true"></i>Send Analytics
+        </button>
+
+        <button class="popover__item" id="popover-item-refresh" role="menuitem">
+            <i class="fas fa-sync-alt" aria-hidden="true"></i>Refresh / Send Data
+        </button>
+
+        <button class="popover__item" id="popover-item-logs" role="menuitem">
+            <i class="fas fa-file-export" aria-hidden="true"></i>Send Logs
+        </button>
+
+        <button class="popover__item"
+                id="popover-item-update"
+                role="menuitem"
+                aria-disabled="true">
+            <i class="fas fa-download" aria-hidden="true"></i>Check for Updates
+        </button>
+
+        <div class="popover__divider" role="separator"></div>
+
+        <button class="popover__item" id="popover-item-about" role="menuitem">
+            <i class="fas fa-info-circle" aria-hidden="true"></i>About EPIC
+        </button>
+
+        <div class="popover__divider" role="separator"></div>
+
+        <button class="popover__item popover__item--danger"
+                id="popover-item-signout-org"
+                role="menuitem">
+            <i class="fas fa-building-user" aria-hidden="true"></i>
+            Sign out of Organization
+        </button>
+
+        <button class="popover__item popover__item--danger"
+                id="popover-item-signout"
+                role="menuitem">
+            <i class="fas fa-user-slash" aria-hidden="true"></i>Sign out
+        </button>
+
+    </nav>
+
+    <footer class="popover__footer">
+        <span>v<span id="popover-app-version">1.0.0</span></span>
+        <a href="#" id="popover-privacy-link">Privacy Policy</a>
+    </footer>
+
+</div>
+<!-- /profile-popover -->
+
+
+<!-- ════════════════════════════════════════════════════════
+     APP SHELL
+════════════════════════════════════════════════════════ -->
+<div class="shell">
+
+    <!-- ── Sidebar navigation ──────────────────────────── -->
+    <nav class="sidebar" aria-label="Main navigation">
+
+        <button class="sidebar__nav-item is-active"
+                data-page="productivity"
+                title="Productivity Sessions"
+                aria-label="Productivity Sessions">
+            <i class="fas fa-clock"          aria-hidden="true"></i>
+            <span>Sessions</span>
+        </button>
+
+        <button class="sidebar__nav-item"
+                data-page="breaks"
+                title="Break Timers"
+                aria-label="Break Timers">
+            <i class="fas fa-hourglass-half" aria-hidden="true"></i>
+            <span>Breaks</span>
+        </button>
+
+        <button class="sidebar__nav-item"
+                data-page="calls"
+                title="Calls"
+                aria-label="Calls">
+            <i class="fas fa-phone"          aria-hidden="true"></i>
+            <span>Calls</span>
+        </button>
+
+        <button class="sidebar__nav-item"
+                data-page="system"
+                title="System Information"
+                aria-label="System Information">
+            <i class="fas fa-chart-bar"      aria-hidden="true"></i>
+            <span>System</span>
+            <span class="sidebar__badge"
+                  id="update-badge"
+                  aria-label="Update available"></span>
+        </button>
+
+    </nav>
+
+    <!-- ── Main content ─────────────────────────────────── -->
+    <div class="main-content" role="main">
+
+        <!-- Sub-header (title changes per page via js/app.js) -->
+        <header class="page-header">
+            <i class="fas fa-clock page-header__icon"
+               id="page-header-icon" aria-hidden="true"></i>
+            <h1 class="page-header__title" id="page-header-title">
+                Productivity Sessions
+            </h1>
+        </header>
+
+        <!-- ── PAGE: Productivity ─────────────────────── -->
+        <section id="page-productivity"
+                 class="page is-active"
+                 aria-label="Productivity Sessions">
+
+            <div class="stopwatch">
+                <output class="stopwatch__display"
+                        id="stopwatchDisplay"
+                        aria-live="polite"
+                        aria-atomic="true">00:00:00</output>
+
+                <div class="stopwatch__controls">
+                    <button class="btn-fab btn-fab--primary"
+                            id="startStopwatch"
+                            title="Check-In"
+                            aria-label="Check-In">
+                        <i class="fas fa-play" aria-hidden="true"></i>
+                    </button>
+
+                    <button class="btn-fab btn-fab--danger"
+                            id="endStopwatch"
+                            title="Check-Out"
+                            aria-label="Check-Out"
+                            disabled>
+                        <i class="fas fa-stop" aria-hidden="true"></i>
+                    </button>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- ── PAGE: Breaks ───────────────────────────── -->
+        <section id="page-breaks"
+                 class="page"
+                 aria-label="Break Timers">
+
+            <div class="breaks__empty" id="breaks-empty">
+                <i class="far fa-hourglass breaks__empty-icon" aria-hidden="true"></i>
+                <h2 class="breaks__empty-title">No timers yet</h2>
+                <p  class="breaks__empty-subtitle">
+                    Tap <strong>+</strong> to add a break timer.
+                </p>
+            </div>
+
+            <ul class="timer-list"
+                id="timer-list"
+                aria-label="Break timers"
+                style="display:none;"></ul>
+
+            <div class="floating-actions">
+                <button class="btn-fab"
+                        id="btn-edit-timers"
+                        title="Edit timers"
+                        aria-label="Edit timers"
+                        style="display:none;">
+                    <i class="fas fa-pen" aria-hidden="true"></i>
+                </button>
+                <button class="btn-fab btn-fab--primary"
+                        id="btn-add-timer"
+                        title="Add timer"
+                        aria-label="Add new timer">
+                    <i class="fas fa-plus" aria-hidden="true"></i>
+                </button>
+            </div>
+
+        </section>
+
+        <!-- ── PAGE: Calls ────────────────────────────── -->
+        <section id="page-calls"
+                 class="page"
+                 aria-label="Calls">
+
+            <div class="calls">
+                <header class="calls__header">
+                    <h2>Call Controls</h2>
+                    <p>Manage your active call and view history.</p>
+                </header>
+
+                <div class="call-controls" role="group" aria-label="Call controls">
+                    <button class="btn-call btn-call--video"
+                            id="btn-call-video"
+                            title="Toggle Video"
+                            aria-label="Toggle video"
+                            aria-pressed="false">
+                        <i class="fas fa-video" aria-hidden="true"></i>
+                    </button>
+                    <button class="btn-call btn-call--audio"
+                            id="btn-call-audio"
+                            title="Toggle Microphone"
+                            aria-label="Toggle microphone"
+                            aria-pressed="false">
+                        <i class="fas fa-microphone" aria-hidden="true"></i>
+                    </button>
+                    <button class="btn-call btn-call--end"
+                            id="btn-call-end"
+                            title="End Call"
+                            aria-label="End call">
+                        <i class="fas fa-phone-slash" aria-hidden="true"></i>
+                    </button>
+                </div>
+
+                <section aria-label="Recent calls">
+                    <h3 class="call-history__title">Recent Calls</h3>
+                    <ul role="list">
+
+                        <li class="call-item">
+                            <div class="call-item__avatar" aria-hidden="true">JD</div>
+                            <div class="call-item__info">
+                                <p class="call-item__name">John Doe</p>
+                                <p class="call-item__meta">
+                                    <i class="fas fa-video" aria-hidden="true"></i>
+                                    Today at 10:30 AM &middot; 15 min
+                                </p>
+                            </div>
+                            <i class="fas fa-phone-alt"
+                               style="color:var(--clr-accent);font-size:12px;"
+                               aria-hidden="true"></i>
+                        </li>
+
+                        <li class="call-item">
+                            <div class="call-item__avatar"
+                                 style="background:var(--clr-danger);"
+                                 aria-hidden="true">SM</div>
+                            <div class="call-item__info">
+                                <p class="call-item__name">Sarah Miller</p>
+                                <p class="call-item__meta">
+                                    <i class="fas fa-phone" aria-hidden="true"></i>
+                                    Yesterday at 3:45 PM &middot; 8 min
+                                </p>
+                            </div>
+                            <i class="fas fa-phone-alt"
+                               style="color:var(--clr-accent);font-size:12px;"
+                               aria-hidden="true"></i>
+                        </li>
+
+                        <li class="call-item">
+                            <div class="call-item__avatar"
+                                 style="background:#00b294;"
+                                 aria-hidden="true">TW</div>
+                            <div class="call-item__info">
+                                <p class="call-item__name">Team Weekly</p>
+                                <p class="call-item__meta">
+                                    <i class="fas fa-video" aria-hidden="true"></i>
+                                    Monday at 9:00 AM &middot; 45 min
+                                </p>
+                            </div>
+                            <i class="fas fa-phone-alt"
+                               style="color:var(--clr-accent);font-size:12px;"
+                               aria-hidden="true"></i>
+                        </li>
+
+                    </ul>
+                </section>
+            </div>
+
+        </section>
+
+        <!-- ── PAGE: System Info ──────────────────────── -->
+        <section id="page-system"
+                 class="page"
+                 aria-label="System Information">
+
+            <div class="system">
+
+                <header class="system__header">
+                    <h2>System Information</h2>
+                    <p>Live monitoring of your session and device metrics.</p>
+                </header>
+
+                <!-- Statistics -->
+                <div class="sys-section is-open">
+                    <button class="sys-section__toggle"
+                            aria-expanded="true"
+                            aria-controls="sys-body-stats">
+                        <i class="fas fa-chart-bar sys-section__toggle-icon" aria-hidden="true"></i>
+                        Statistics
+                        <i class="fas fa-chevron-down sys-section__chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="sys-section__body" id="sys-body-stats">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <p class="stat-card__value"><span id="stat-conn-type">--</span></p>
+                                <p class="stat-card__label">Connection</p>
+                            </div>
+                            <div class="stat-card">
+                                <p class="stat-card__value" id="stat-break-time">0h</p>
+                                <p class="stat-card__label">Break Time</p>
+                            </div>
+                            <div class="stat-card">
+                                <p class="stat-card__value" id="stat-total-breaks">0</p>
+                                <p class="stat-card__label">Total Breaks</p>
+                            </div>
+                            <div class="stat-card">
+                                <p class="stat-card__value" id="stat-avg-break">--</p>
+                                <p class="stat-card__label">Avg Break</p>
+                            </div>
+                            <div class="stat-card">
+                                <p class="stat-card__value"><span id="stat-location">--</span></p>
+                                <p class="stat-card__label">Location</p>
+                            </div>
+                            <div class="stat-card">
+                                <p class="stat-card__value" id="stat-cpu">--</p>
+                                <p class="stat-card__label">CPU</p>
+                            </div>
+                            <div class="stat-card">
+                                <p class="stat-card__value" id="stat-memory">--</p>
+                                <p class="stat-card__label">Memory</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Activity Logs -->
+                <div class="sys-section">
+                    <button class="sys-section__toggle"
+                            aria-expanded="false"
+                            aria-controls="sys-body-logs">
+                        <i class="fas fa-list sys-section__toggle-icon" aria-hidden="true"></i>
+                        Activity Logs
+                        <i class="fas fa-chevron-down sys-section__chevron" aria-hidden="true"></i>
+                    </button>
+                    <div class="sys-section__body" id="sys-body-logs">
+                        <table class="log-table" aria-label="Activity log">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Time</th>
+                                    <th scope="col">Message</th>
+                                </tr>
+                            </thead>
+                            <tbody id="activity-logs-body">
+                                <tr>
+                                    <td colspan="2" class="log-table__empty">
+                                        No activity logged yet.
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </section>
+
+    </div>
+    <!-- /main-content -->
+
+</div>
+<!-- /shell -->
+
+
+<!-- ════════════════════════════════════════════════════════
+     ADD TIMER MODAL
+════════════════════════════════════════════════════════ -->
+<div id="timer-modal"
+     class="modal-backdrop"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="modal-heading">
+
+    <div class="modal">
+        <h2 class="modal__title" id="modal-heading">Add new timer</h2>
+
+        <div class="time-picker" role="group" aria-label="Set duration">
+
+            <div class="time-picker__group">
+                <button class="time-picker__btn"
+                        data-field="modal-hours" data-step="1"
+                        aria-label="Increase hours">
+                    <i class="fas fa-chevron-up" aria-hidden="true"></i>
+                </button>
+                <input type="number" class="time-picker__input"
+                       id="modal-hours" min="0" max="23" value="00"
+                       aria-label="Hours">
+                <button class="time-picker__btn"
+                        data-field="modal-hours" data-step="-1"
+                        aria-label="Decrease hours">
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
+            </div>
+
+            <span class="time-picker__sep" aria-hidden="true">:</span>
+
+            <div class="time-picker__group">
+                <button class="time-picker__btn"
+                        data-field="modal-minutes" data-step="1"
+                        aria-label="Increase minutes">
+                    <i class="fas fa-chevron-up" aria-hidden="true"></i>
+                </button>
+                <input type="number" class="time-picker__input"
+                       id="modal-minutes" min="0" max="59" value="00"
+                       aria-label="Minutes">
+                <button class="time-picker__btn"
+                        data-field="modal-minutes" data-step="-1"
+                        aria-label="Decrease minutes">
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
+            </div>
+
+            <span class="time-picker__sep" aria-hidden="true">:</span>
+
+            <div class="time-picker__group">
+                <button class="time-picker__btn"
+                        data-field="modal-seconds" data-step="1"
+                        aria-label="Increase seconds">
+                    <i class="fas fa-chevron-up" aria-hidden="true"></i>
+                </button>
+                <input type="number" class="time-picker__input"
+                       id="modal-seconds" min="0" max="59" value="00"
+                       aria-label="Seconds">
+                <button class="time-picker__btn"
+                        data-field="modal-seconds" data-step="-1"
+                        aria-label="Decrease seconds">
+                    <i class="fas fa-chevron-down" aria-hidden="true"></i>
+                </button>
+            </div>
+
+        </div>
+
+        <div class="field-with-icon">
+            <i class="fas fa-pen field-with-icon__icon" aria-hidden="true"></i>
+            <input type="text"
+                   class="field-with-icon__input"
+                   id="modal-timer-name"
+                   placeholder="Timer name"
+                   aria-label="Timer name"
+                   maxlength="64">
+        </div>
+
+        <div class="modal__footer">
+            <button class="btn-ghost" id="btn-modal-cancel">Cancel</button>
+            <button class="btn-solid" id="btn-modal-save">
+                <i class="far fa-save" aria-hidden="true"></i> Save
+            </button>
+        </div>
+    </div>
+
+</div>
+<!-- /timer-modal -->
+
+
+<!-- ════════════════════════════════════════════════════════
+     ABOUT / PRIVACY SLIDE PANEL
+════════════════════════════════════════════════════════ -->
+<div id="about-panel-overlay"
+     class="panel-overlay"
+     role="dialog"
+     aria-modal="true"
+     aria-labelledby="about-panel-title">
+
+    <div class="panel">
+
+        <header class="panel__header">
+            <h2 class="panel__title" id="about-panel-title">About EPIC</h2>
+            <button class="panel__close"
+                    id="about-panel-close"
+                    aria-label="Close">
+                <i class="fas fa-times" aria-hidden="true"></i>
+            </button>
+        </header>
+
+        <div class="panel__tabs" role="tablist">
+            <button class="panel__tab is-active"
+                    role="tab"
+                    data-tab="about"
+                    aria-selected="true">About</button>
+            <button class="panel__tab"
+                    role="tab"
+                    data-tab="privacy"
+                    aria-selected="false">Privacy Policy</button>
+        </div>
+
+        <div class="panel__body">
+
+            <!-- About tab -->
+            <div class="panel__tab-content is-active"
+                 data-tab-content="about"
+                 role="tabpanel">
+
+                <div class="about-hero">
+                    <div class="about-hero__logo" aria-hidden="true">
+                        <i class="fas fa-bolt"></i>
+                    </div>
+                    <div>
+                        <p class="about-hero__name">EPIC</p>
+                        <p class="about-hero__tagline">
+                            Employee Productivity &amp; Insight Console
+                        </p>
+                        <span class="about-hero__version">
+                            v<span id="about-app-version">1.0.0</span>
+                        </span>
+                    </div>
+                </div>
+
+                <dl>
+                    <div class="about-info-row">
+                        <dt class="about-info-row__label">Publisher</dt>
+                        <dd class="about-info-row__value">Aiprus Software</dd>
+                    </div>
+                    <div class="about-info-row">
+                        <dt class="about-info-row__label">Platform</dt>
+                        <dd class="about-info-row__value">Windows &middot; macOS &middot; Linux</dd>
+                    </div>
+                    <div class="about-info-row">
+                        <dt class="about-info-row__label">Framework</dt>
+                        <dd class="about-info-row__value">Tauri &plus; Rust</dd>
+                    </div>
+                    <div class="about-info-row">
+                        <dt class="about-info-row__label">Website</dt>
+                        <dd class="about-info-row__value">
+                            <a href="https://www.aiprus.com"
+                               target="_blank" rel="noopener noreferrer">
+                                www.aiprus.com
+                            </a>
+                        </dd>
+                    </div>
+                    <div class="about-info-row">
+                        <dt class="about-info-row__label">Support</dt>
+                        <dd class="about-info-row__value">
+                            <a href="mailto:support@aiprus.com">support@aiprus.com</a>
+                        </dd>
+                    </div>
+                    <div class="about-info-row">
+                        <dt class="about-info-row__label">Phone</dt>
+                        <dd class="about-info-row__value">+91-842-000-6452</dd>
+                    </div>
+                </dl>
+
+                <p class="about-footer">
+                    &copy; 2025 Aiprus Software. All rights reserved.<br>
+                    EPIC is a desktop productivity monitoring agent for enterprise use.
+                </p>
+
+            </div>
+
+            <!-- Privacy Policy tab -->
+            <div class="panel__tab-content"
+                 data-tab-content="privacy"
+                 role="tabpanel">
+
+                <p class="policy-intro">
+                    <strong>Aiprus Software</strong> is committed to protecting your
+                    privacy while providing productivity monitoring for your organization.
+                </p>
+
+                <section class="policy-section">
+                    <h3 class="policy-section__title">
+                        <span class="policy-section__num" aria-hidden="true">1</span>
+                        Data Collected
+                    </h3>
+                    <p class="policy-section__text">
+                        The Agent collects work-related activity during business hours only:
+                    </p>
+                    <div class="policy-table-wrap">
+                        <table class="policy-table">
+                            <thead>
+                                <tr><th scope="col">Data Type</th><th scope="col">Description</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><td><strong>Activity &amp; Usage</strong></td>
+                                    <td>Apps, websites, keyboard/mouse activity, active/idle hours</td></tr>
+                                <tr><td><strong>Task &amp; Performance</strong></td>
+                                    <td>Task completion, productivity score, notifications</td></tr>
+                                <tr><td><strong>Visual Monitoring</strong></td>
+                                    <td>Random screenshots &amp; short video clips (per company policy)</td></tr>
+                                <tr><td><strong>System &amp; Device</strong></td>
+                                    <td>Device name, IP address, login/logout times, user ID</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="policy-callout--warn">
+                        <p class="callout__title">⚠ The Agent does NOT collect:</p>
+                        <ul class="policy-section__list" style="margin:0">
+                            <li>Passwords or authentication credentials</li>
+                            <li>Personal files or non-work-related activity</li>
+                            <li>Financial transactions or personal financial information</li>
+                        </ul>
+                    </div>
+                </section>
+
+                <section class="policy-section">
+                    <h3 class="policy-section__title">
+                        <span class="policy-section__num" aria-hidden="true">2</span>
+                        Purpose of Data Use
+                    </h3>
+                    <ul class="policy-section__list">
+                        <li>Generate productivity reports and dashboards</li>
+                        <li>Support fair, unbiased performance evaluations</li>
+                        <li>Enable workload planning and efficiency improvements</li>
+                    </ul>
+                    <p class="policy-callout--success">No data is sent outside your organization.</p>
+                </section>
+
+                <section class="policy-section">
+                    <h3 class="policy-section__title">
+                        <span class="policy-section__num" aria-hidden="true">3</span>
+                        Data Storage &amp; Security
+                    </h3>
+                    <ul class="policy-section__list">
+                        <li>Data is stored securely within your organization</li>
+                        <li>All transmitted data is encrypted in transit and at rest</li>
+                        <li>Role-based access — only authorized personnel can view data</li>
+                        <li>Screenshots and video clips captured per company policy</li>
+                    </ul>
+                </section>
+
+                <section class="policy-section">
+                    <h3 class="policy-section__title">
+                        <span class="policy-section__num" aria-hidden="true">4</span>
+                        User Consent
+                    </h3>
+                    <p class="policy-section__text">
+                        By installing and using the Desktop Agent, you acknowledge and
+                        consent to monitoring of your work-related activity during
+                        business hours for productivity reporting purposes only.
+                    </p>
+                </section>
+
+                <section class="policy-section">
+                    <h3 class="policy-section__title">
+                        <span class="policy-section__num" aria-hidden="true">5</span>
+                        User Responsibilities
+                    </h3>
+                    <ul class="policy-section__list">
+                        <li>Use the Desktop Agent for authorized work purposes only</li>
+                        <li>Keep your credentials secure — do not share accounts</li>
+                        <li>Follow company policies regarding the Desktop Agent</li>
+                    </ul>
+                </section>
+
+                <section class="policy-section">
+                    <h3 class="policy-section__title">
+                        <span class="policy-section__num" aria-hidden="true">6</span>
+                        Contact
+                    </h3>
+                    <div class="contact-block">
+                        <div class="contact-block__row">
+                            <span class="contact-block__label">Email</span>
+                            <a href="mailto:support@aiprus.com">support@aiprus.com</a>
+                        </div>
+                        <div class="contact-block__row">
+                            <span class="contact-block__label">Phone</span>
+                            <span>+91-842-000-6452</span>
+                        </div>
+                        <div class="contact-block__row">
+                            <span class="contact-block__label">Website</span>
+                            <a href="https://www.aiprus.com"
+                               target="_blank" rel="noopener noreferrer">www.aiprus.com</a>
+                        </div>
+                    </div>
+                </section>
+
+            </div>
+            <!-- /privacy tab -->
+
+        </div>
+        <!-- /panel__body -->
+    </div>
+    <!-- /panel -->
+
+</div>
+<!-- /about-panel-overlay -->
+
+
+<!--
+    SCRIPTS — load order matters:
+      epic.js     yours, untouched — owns all invoke() calls
+      js/popover.js  ProfilePopover + AboutPanel
+      js/app.js      all other UI logic
+      js/header.js   window controls (minimize/max/close)
+-->
+<script src="js/epic.js"          defer></script>
+<script src="js/popover.js"    defer></script>
+<script src="js/app.js"        defer></script>
+<script src="js/header.js"     defer></script>
+
+</body>
+</html>

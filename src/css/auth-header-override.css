@@ -1,0 +1,39 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    display: block !important;
+    padding: 0 !important;
+    margin: 0;
+    min-height: 100vh;
+    background: #ffffff !important;  /* pure white like Teams */
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
+/* Fix header to top */
+#header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 9999;
+}
+
+/* White title bar on auth pages */
+#header .title-bar {
+    background: #ffffff;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+/* Content area below fixed header */
+.page-wrapper {
+    min-height: 100vh;
+    padding-top: 48px;
+    display: flex;
+    align-items: flex-start;   /* Teams aligns content near top, not centre */
+    justify-content: center;
+    box-sizing: border-box;
+}
+
+/* ── Hide on auth pages ── */
+.title-bar-left button.title-bar-button            { display: none !important; }
+.title-bar-search                                   { display: none !important; }
+.title-bar-right > button.title-bar-button:first-child { display: none !important; }
+.user-avatar                                        { display: none !important; }

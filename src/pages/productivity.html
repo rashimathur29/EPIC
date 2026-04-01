@@ -1,0 +1,178 @@
+<!-- ══ PRODUCTIVITY ══ -->
+<div class="two-col">
+        <!-- LEFT -->
+        <div>
+            <!-- Session card -->
+            <div class="card">
+                <div class="card-hdr">
+                    <span class="card-hdr__title">Get ready to focus</span>
+                    <button class="card-hdr__action"><i class="fas fa-ellipsis-h"></i></button>
+                </div>
+                <div class="sess-hero">
+                    <div class="status-pill" id="sess-pill">
+                        <span class="status-pill__dot"></span>
+                        <span id="sess-pill-txt">Not started</span>
+                    </div>
+                    <div class="sess-time" id="stopwatchDisplay">00:00:00</div>
+                    <div class="sess-sublabel">active time today</div>
+                    <p class="sess-desc">We'll track your keyboard, mouse and app usage during each session for productivity reporting.</p>
+                    <div class="sess-btns">
+                        <button class="btn-primary" id="startStopwatch"><i class="fas fa-play"></i> Start session</button>
+                        <button class="btn-danger"  id="endStopwatch" disabled><i class="fas fa-stop"></i> End session</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tasks card -->
+            <div class="card">
+                <div class="card-hdr">
+                    <span class="card-hdr__title" style="display:flex;align-items:center;gap:8px;">
+                        <i class="fas fa-check-square" style="color:var(--accent);"></i>Tasks
+                    </span>
+                    <button class="card-hdr__action" id="task-add-btn"><i class="fas fa-plus"></i></button>
+                </div>
+                <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Select a task for your session</p>
+                <div class="task-input-row" id="task-input-row">
+                    <input type="text" id="task-input" placeholder="Enter task name…" maxlength="80">
+                    <button class="btn-primary" style="padding:7px 14px;font-size:12px;" id="task-save">Add</button>
+                    <button class="btn-ghost" style="padding:7px 14px;font-size:12px;" id="task-cancel">Cancel</button>
+                </div>
+                <div id="task-list"></div>
+                <div class="empty" id="task-empty" style="padding:18px 0 4px;">
+                    <i class="far fa-clipboard" style="font-size:26px;"></i>
+                    <p>No tasks yet. Tap + to add one.</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT -->
+        <div>
+            <!-- Daily progress ring — enhanced -->
+            <div class="card">
+                <div class="card-hdr">
+                    <span class="card-hdr__title">Daily progress</span>
+                    <button class="card-hdr__action" id="edit-goal-btn" title="Edit daily goal"><i class="fas fa-pencil-alt"></i></button>
+                </div>
+                <div class="ring-wrap">
+                    <div class="ring-box">
+                        <svg width="140" height="140" viewBox="0 0 140 140">
+                            <!-- idle arc (yellow) behind active -->
+                            <circle cx="70" cy="70" r="58" fill="none" stroke="#f0c060" stroke-width="10"
+                                    stroke-linecap="round" stroke-dasharray="364" stroke-dashoffset="364" id="ring-idle-circle"/>
+                            <!-- track -->
+                            <circle cx="70" cy="70" r="58" fill="none" stroke="#e5e5e5" stroke-width="10"/>
+                            <!-- active arc (accent) on top -->
+                            <circle cx="70" cy="70" r="58" fill="none" stroke="#6264a7" stroke-width="10"
+                                    stroke-linecap="round" stroke-dasharray="364" stroke-dashoffset="364" id="ring-circle"/>
+                        </svg>
+                        <div class="ring-inner">
+                            <div class="ring-num" id="ring-num">0</div>
+                            <div class="ring-unit" id="ring-unit">min</div>
+                        </div>
+                    </div>
+
+                    <!-- score badge -->
+                    <div class="score-badge score-badge--mid" id="score-badge">
+                        <i class="fas fa-fire"></i>
+                        <span id="score-badge-txt">0% of daily goal</span>
+                    </div>
+
+                    <div class="ring-stats" style="margin-top:14px;">
+                        <div class="ring-stat">
+                            <div class="ring-stat__val" id="stat-yesterday">—</div>
+                            <div class="ring-stat__lbl">Yesterday</div>
+                            <div class="ring-stat__lbl">minutes</div>
+                        </div>
+                        <div class="ring-stat">
+                            <div class="ring-stat__val" id="stat-goal">8</div>
+                            <div class="ring-stat__lbl">Daily goal</div>
+                            <div class="ring-stat__lbl">hours</div>
+                        </div>
+                        <div class="ring-stat">
+                            <div class="ring-stat__val" id="stat-streak">0</div>
+                            <div class="ring-stat__lbl">Streak</div>
+                            <div class="ring-stat__lbl">days</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Active vs Idle bars — driven by user_activity_minute data -->
+                <div class="dp-bars">
+                    <div class="dp-bar-row">
+                        <div class="dp-bar-label">
+                            <span><i class="fas fa-circle" style="color:var(--accent);font-size:8px;margin-right:4px;"></i>Active time</span>
+                            <strong id="dp-active-label">—</strong>
+                        </div>
+                        <div class="dp-bar-track"><div class="dp-bar-fill" id="dp-active-bar" style="width:0%;background:var(--accent);"></div></div>
+                    </div>
+                    <div class="dp-bar-row">
+                        <div class="dp-bar-label">
+                            <span><i class="fas fa-circle" style="color:#f0c060;font-size:8px;margin-right:4px;"></i>Idle time</span>
+                            <strong id="dp-idle-label">—</strong>
+                        </div>
+                        <div class="dp-bar-track"><div class="dp-bar-fill" id="dp-idle-bar" style="width:0%;background:#f0c060;"></div></div>
+                    </div>
+                    <div class="dp-bar-row">
+                        <div class="dp-bar-label">
+                            <span><i class="fas fa-circle" style="color:var(--accent-dim);font-size:8px;margin-right:4px;border:1px solid #aaa;border-radius:50%;"></i>Break time</span>
+                            <strong id="dp-break-label">—</strong>
+                        </div>
+                        <div class="dp-bar-track"><div class="dp-bar-fill" id="dp-break-bar" style="width:0%;background:#b0c4e8;"></div></div>
+                    </div>
+                </div>
+
+                <!-- Today's session events — from user_checkin + user_breaks -->
+                <div class="dp-break-list" id="dp-event-list">
+                    <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);margin-bottom:8px;">Today's events</div>
+                    <div class="dp-break-item">
+                        <span class="dp-break-dot" style="background:var(--border);"></span>
+                        <span>No events yet — check in to start</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- This week chart — enhanced -->
+            <div class="card">
+                <div class="card-hdr">
+                    <span class="card-hdr__title">This week</span>
+                    <span style="font-size:11px;color:var(--text-muted);" id="week-range"></span>
+                </div>
+                <!-- bar chart — height driven by real active seconds from user_checkin -->
+                <div class="week-chart" id="week-chart"></div>
+
+                <!-- weekly summary stats below chart -->
+                <div class="week-summary">
+                    <div class="ws-item">
+                        <div class="ws-val" id="ws-total">—</div>
+                        <div class="ws-lbl">Total hrs</div>
+                    </div>
+                    <div class="ws-item">
+                        <div class="ws-val" id="ws-avg">—</div>
+                        <div class="ws-lbl">Daily avg</div>
+                    </div>
+                    <div class="ws-item">
+                        <div class="ws-val" id="ws-best">—</div>
+                        <div class="ws-lbl">Best day</div>
+                    </div>
+                    <div class="ws-item">
+                        <div class="ws-val" id="ws-days">—</div>
+                        <div class="ws-lbl">Days worked</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Today at a glance — enhanced -->
+            <div class="card">
+                <div class="card-hdr"><span class="card-hdr__title">Today at a glance</span></div>
+                <div class="glance-row"><span>Active time</span><strong id="g-active">—</strong></div>
+                <div class="glance-row"><span>Idle time</span><strong id="g-idle">—</strong></div>
+                <div class="glance-row"><span>Break time</span><strong id="g-break">—</strong></div>
+                <div class="glance-row"><span>Total breaks</span><strong id="g-bcount">—</strong></div>
+                <div class="glance-row"><span>Keystrokes</span><strong id="g-keys">—</strong></div>
+                <div class="glance-row"><span>Mouse clicks</span><strong id="g-clicks">—</strong></div>
+                <div class="glance-row"><span>Productivity score</span>
+                    <strong id="g-score" style="color:var(--accent);">—</strong>
+                </div>
+            </div>
+        </div>
+</div>

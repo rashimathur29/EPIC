@@ -1,0 +1,49 @@
+/* =============================================================
+   css/base.css
+   Minimal reset + global base. Depends on tokens.css being
+   linked before this file in index.html.
+   ============================================================= */
+
+*, *::before, *::after {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+html, body {
+    height: 100%;
+    overflow: hidden;
+    font-family: var(--font);
+    font-size: var(--fz-base);
+    color: var(--clr-text);
+    background: var(--clr-bg);
+    -webkit-font-smoothing: antialiased;
+}
+
+button {
+    font-family: var(--font);
+    cursor: pointer;
+}
+
+button:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+}
+
+a {
+    color: var(--clr-accent);
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+/* ── Custom scrollbar ── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+    background: var(--clr-border);
+    border-radius: var(--r-pill);
+}
+::-webkit-scrollbar-thumb:hover { background: #c8c6c4; }

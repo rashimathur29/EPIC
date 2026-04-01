@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sign in — EPIC</title>
+
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/auth.css">
+
+    <style>
+        .step           { display: none; flex-direction: column; }
+        .step.is-active { display: flex; }
+
+        /* Loading spinner on Sign in button */
+        .btn-primary-auth.is-loading {
+            opacity: 0.7;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
+        .btn-primary-auth.is-loading::after {
+            content: '';
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            margin-left: 8px;
+            border: 2px solid rgba(255,255,255,0.5);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+<div class="page-wrap">
+
+    <div id="header"></div>
+
+    <div class="page-body">
+
+        <div class="logo-row">
+            <div class="logo-img">
+                <img src="images/aiprus.png" alt="Aiprus"
+                     onerror="this.style.display='none'">
+            </div>
+            <span class="logo-name">Aiprus</span>
+        </div>
+
+        <!-- ═══ STEP 1 — Email ═══ -->
+        <div class="step is-active" id="step-email">
+
+            <h1 class="auth-heading">Sign in</h1>
+
+            <div class="input-wrap">
+                <input type="text"
+                       id="emailInput"
+                       placeholder="Email, phone, or Skype"
+                       autocomplete="email"
+                       spellcheck="false">
+            </div>
+
+            <div class="feedback" id="email-feedback" aria-live="polite"></div>
+
+            <p class="helper-text">
+                No account?
+                <button type="button" class="auth-link"
+                        onclick="goToOrganization()">
+                    Sign in with your organization
+                </button>
+            </p>
+
+            <div class="btn-row">
+                <button type="button"
+                        class="btn-primary-auth"
+                        id="btn-email-next">
+                    Next
+                </button>
+            </div>
+
+        </div>
+
+        <!-- ═══ STEP 2 — Password ═══ -->
+        <div class="step" id="step-password">
+
+            <h1 class="auth-heading">Enter password</h1>
+
+            <div class="step2-email">
+                <span id="display-email"></span>
+                <button type="button" class="auth-link"
+                        onclick="goBackToEmail()">Change</button>
+            </div>
+
+            <div class="input-wrap">
+                <input type="password"
+                       id="passwordInput"
+                       placeholder="Password"
+                       autocomplete="current-password"
+                       spellcheck="false">
+                <button type="button"
+                        class="pwd-toggle"
+                        id="pwd-toggle-btn"
+                        aria-label="Show password"
+                        title="Show password">
+                    <i class="far fa-eye" aria-hidden="true"></i>
+                </button>
+            </div>
+
+            <div class="feedback" id="password-feedback" aria-live="polite"></div>
+
+            <button type="button"
+                    class="forgot-link"
+                    onclick="forgotPassword()">
+                Forgot password?
+            </button>
+
+            <div class="btn-row">
+                <button type="button"
+                        class="btn-primary-auth"
+                        id="btn-signin">
+                    Sign in
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+
+    <footer class="page-footer">
+        <span>&copy;2025 Aiprus</span>
+        <a href="#">Privacy statement</a>
+    </footer>
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.3.1.min.js"
+        integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+        crossorigin="anonymous"></script>
+
+<script>
+    $(function () {
+        $('#header').load('header-dialog.html', function () {
+            const s = document.createElement('script');
+            s.src   = 'js/header.js';
+            document.body.appendChild(s);
+        });
+    });
+</script>
+
+<script>
+'use strict';
+
+/* ── Tauri APIs ── */
+const { invoke }   = window.__TAURI__?.core
+    ?? { invoke: async () => ({ success: false, message: 'Tauri not available' }) };
+const tauriWindow  = window.__TAURI__?.window;
+
+/* ── Resize to full dashboard size ── */
+async function resizeToApp() {
+    try {
+        const win = tauriWindow?.getCurrentWindow?.();
+        if (!win) return;
+        await win.setSize(new tauriWindow.LogicalSize(1280, 800));
+        await win.center();
+        await win.setResizable(true);
+    } catch (e) {
+        console.warn('[resize]', e);
+    }
+}
+
+/* ── Element refs ── */
+const stepEmail        = document.getElementById('step-email');
+const stepPassword     = document.getElementById('step-password');
+const emailInput       = document.getElementById('emailInput');
+const passwordInput    = document.getElementById('passwordInput');
+const displayEmail     = document.getElementById('display-email');
+const emailFeedback    = document.getElementById('email-feedback');
+const passwordFeedback = document.getElementById('password-feedback');
+const btnSignin        = document.getElementById('btn-signin');
+
+/* ── Step helpers ── */
+function showStep(name) {
+    stepEmail.classList.toggle('is-active',    name === 'email');
+    stepPassword.classList.toggle('is-active', name === 'password');
+}
+
+function setFeedback(el, msg, isError = true) {
+    el.textContent   = msg ?? '';
+    el.style.color   = isError ? '#a80000' : '#107c10';
+}
+
+/* ── Step 1 → Step 2 ── */
+document.getElementById('btn-email-next').addEventListener('click', () => {
+    const email = emailInput.value.trim();
+    if (!email) {
+        setFeedback(emailFeedback, 'Enter a valid email address.');
+        emailInput.focus();
+        return;
+    }
+    setFeedback(emailFeedback, '');
+    displayEmail.textContent = email;
+    showStep('password');
+    passwordInput.focus();
+});
+
+emailInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') document.getElementById('btn-email-next').click();
+});
+emailInput.addEventListener('input', () => setFeedback(emailFeedback, ''));
+
+/* ── Back to email ── */
+function goBackToEmail() {
+    passwordInput.value = '';
+    setFeedback(passwordFeedback, '');
+    showStep('email');
+    emailInput.focus();
+}
+
+/* ── Password show/hide ── */
+document.getElementById('pwd-toggle-btn').addEventListener('click', function () {
+    const show = passwordInput.type === 'password';
+    passwordInput.type = show ? 'text' : 'password';
+    this.querySelector('i').className = show ? 'far fa-eye-slash' : 'far fa-eye';
+    this.setAttribute('aria-label', show ? 'Hide password' : 'Show password');
+    passwordInput.focus();
+});
+
+passwordInput.addEventListener('input', () => setFeedback(passwordFeedback, ''));
+
+/* ── Sign in — calls Rust login_user, enforces password server-side ── */
+btnSignin.addEventListener('click', async () => {
+    const email    = emailInput.value.trim();
+    const password = passwordInput.value;
+
+    if (!password) {
+        setFeedback(passwordFeedback, 'Enter your password.');
+        passwordInput.focus();
+        return;
+    }
+
+    /* org_id was stored in sessionStorage by find_your_organization.html */
+    const orgId   = sessionStorage.getItem('orgId')     ?? '';
+    const orgName = sessionStorage.getItem('orgName')   ?? '';
+
+    /* Show loading state */
+    setFeedback(passwordFeedback, '');
+    btnSignin.classList.add('is-loading');
+    btnSignin.textContent = 'Signing in';
+
+    try {
+        const result = await invoke('login_user', {
+            email,
+            password,
+            orgId,   /* Tauri converts camelCase → snake_case automatically */
+        });
+
+        if (result.success) {
+            /* ── Persist user data to sessionStorage for the dashboard ── */
+            sessionStorage.setItem('userEmail',  result.email      ?? email);
+            sessionStorage.setItem('userId',     result.user_id    ?? '');
+            sessionStorage.setItem('firstName',  result.first_name ?? '');
+            sessionStorage.setItem('lastName',   result.last_name  ?? '');
+            sessionStorage.setItem('orgId',      result.org_id     ?? orgId);
+            if (orgName) sessionStorage.setItem('orgName', orgName);
+            if (result.designation)  sessionStorage.setItem('designation',  result.designation);
+            if (result.phone_number) sessionStorage.setItem('phoneNumber',  result.phone_number);
+            if (result.token)        sessionStorage.setItem('authToken',    result.token);
+
+            /* Resize to dashboard, then navigate */
+            await resizeToApp();
+            window.location.href = 'index.html';
+        } else {
+            /* Show the error message returned by Rust (e.g. wrong password hint) */
+            setFeedback(passwordFeedback, result.message || 'Sign-in failed. Please try again.');
+            btnSignin.classList.remove('is-loading');
+            btnSignin.textContent = 'Sign in';
+            passwordInput.focus();
+        }
+    } catch (err) {
+        console.error('[login]', err);
+        setFeedback(passwordFeedback, 'Connection error. Please try again.');
+        btnSignin.classList.remove('is-loading');
+        btnSignin.textContent = 'Sign in';
+    }
+});
+
+passwordInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') btnSignin.click();
+});
+
+/* ── Helpers ── */
+function goToOrganization() {
+    window.location.href = 'find_your_organization.html';
+}
+
+function forgotPassword() {
+    console.log('[forgotPassword] not yet wired');
+}
+
+/* ── Pre-fill email if returning ── */
+window.addEventListener('load', () => {
+    const saved = sessionStorage.getItem('userEmail');
+    if (saved) emailInput.value = saved;
+});
+</script>
+
+</body>
+</html>

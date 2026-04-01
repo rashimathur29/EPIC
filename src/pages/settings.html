@@ -1,0 +1,25 @@
+<div class="card" style="max-width:500px;">
+    <div class="card-hdr"><span class="card-hdr__title">Settings</span></div>
+    <div style="display:flex;flex-direction:column;gap:18px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;">
+            <div>
+                <div style="font-size:13px;font-weight:600;">Daily goal</div>
+                <div style="font-size:12px;color:var(--text-muted);">Target productive hours per day</div>
+            </div>
+            <select id="goal-sel" style="border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 10px;font-family:var(--font);font-size:13px;outline:none;">
+                <option value="6">6 hours</option>
+                <option value="7">7 hours</option>
+                <option value="8" selected>8 hours</option>
+                <option value="9">9 hours</option>
+                <option value="10">10 hours</option>
+            </select>
+        </div>
+        <div style="height:1px;background:var(--border-light);"></div>
+        <div>
+            <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Account</div>
+            <div style="font-size:12px;color:var(--text-muted);" id="settings-email">—</div>
+        </div>
+        <div style="height:1px;background:var(--border-light);"></div>
+        <button class="btn-danger" id="settings-signout" style="width:fit-content;"><i class="fas fa-sign-out-alt"></i> Sign out</button>
+    </div>
+</div>

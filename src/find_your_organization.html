@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find your organization — EPIC</title>
+
+    <link rel="stylesheet"
+          href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/tokens.css">
+    <link rel="stylesheet" href="css/auth.css">
+</head>
+<body>
+
+<div class="page-wrap">
+
+    <div id="header"></div>
+
+    <div class="page-body">
+
+        <div class="logo-row">
+            <div class="logo-img">
+                <img src="images/aiprus.png" alt="EPIC"
+                     onerror="this.style.display='none'">
+            </div>
+            <span class="logo-name">EPIC</span>
+        </div>
+
+        <h1 class="auth-heading">Find your organization</h1>
+
+        <p class="auth-desc">
+            Enter the domain name of the organization you'd like to sign in to.
+        </p>
+
+        <form id="orgForm" novalidate>
+
+            <label class="field-label" for="domainInput">Domain name</label>
+
+            <div class="input-wrap">
+                <input type="text"
+                       id="domainInput"
+                       placeholder="e.g. company.com"
+                       autocomplete="off"
+                       spellcheck="false">
+            </div>
+
+            <div class="feedback" id="org-feedback" aria-live="polite"></div>
+
+            <div class="info-hint">
+                <i class="fas fa-info-circle" aria-hidden="true"></i>
+                <span>
+                    <strong>Example:</strong>
+                    If your work email is john@company.com,
+                    enter <strong>company.com</strong>
+                </span>
+            </div>
+
+            <div class="btn-row">
+                <button type="submit"
+                        class="btn-primary-auth"
+                        id="submitBtn"
+                        disabled>
+                    Next
+                </button>
+            </div>
+
+        </form>
+
+    </div>
+
+    <footer class="page-footer">
+        <span>&copy;2025 Aiprus</span>
+        <a href="#">Privacy statement</a>
+        <a href="#">Terms of use</a>
+    </footer>
+
+</div>
+
+<script src="https://code.jquery.com/jquery-3.3.1.min.js"
+        integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+        crossorigin="anonymous"></script>
+
+<script>
+    $(function () {
+        $('#header').load('header-dialog.html', function () {
+            const s = document.createElement('script');
+            s.src   = 'js/header.js';
+            document.body.appendChild(s);
+        });
+    });
+</script>
+
+<script>
+    'use strict';
+
+    const { invoke } = window.__TAURI__?.core
+        ?? { invoke: async () => ({ valid: false, message: 'Tauri not available' }) };
+
+    const domainInput = document.getElementById('domainInput');
+    const submitBtn   = document.getElementById('submitBtn');
+    const feedbackEl  = document.getElementById('org-feedback');
+    let   debounce    = null;
+
+    /* ── Auth check on startup ──────────────────────────────────
+       If user + org already exist in DB, skip this page entirely.
+       Only land here when the user has explicitly logged out.
+    ─────────────────────────────────────────────────────────── */
+    window.addEventListener('load', async () => {
+        try {
+            const auth = await invoke('check_auth_state');
+
+            if (auth.redirect === 'index') {
+                // Fully authenticated — go straight to app
+                window.location.replace('index.html');
+                return;
+            }
+
+            if (auth.redirect === 'login') {
+                // Org is set but user is not — go to login
+                window.location.replace('login.html');
+                return;
+            }
+
+            // redirect === 'find_org' → stay here, show form
+        } catch (e) {
+            // Outside Tauri / command not registered yet — stay on page
+            console.warn('[auth_check]', e);
+        }
+
+        // Pre-fill domain if returning from login page back button
+        const saved = sessionStorage.getItem('orgDomain');
+        if (saved) {
+            domainInput.value = saved;
+            checkOrg(saved);
+        }
+    });
+
+    /* ── Feedback helper ── */
+    const ICONS = {
+        loading: '<i class="fas fa-circle-notch fa-spin"></i>',
+        success: '<i class="fas fa-check-circle" style="color:#107c10"></i>',
+        error:   '<i class="fas fa-exclamation-circle" style="color:#a80000"></i>',
+    };
+
+    function setFeedback(msg, type) {
+        feedbackEl.innerHTML   = msg ? `${ICONS[type] ?? ''} ${msg}` : '';
+        feedbackEl.style.color = type === 'success' ? '#107c10'
+                               : type === 'error'   ? '#a80000' : '#605e5c';
+        submitBtn.disabled     = type !== 'success';
+    }
+
+    /* ── Org validation ── */
+    async function checkOrg(domain) {
+        if (!domain || domain.trim().length < 2) {
+            setFeedback('', '');
+            submitBtn.disabled = true;
+            return;
+        }
+
+        setFeedback('Checking organization…', 'loading');
+
+        try {
+            const r = await invoke('validate_organization', { domain: domain.trim() });
+
+            if (r.valid) {
+                const suffix = r.sso_enabled ? ' (SSO)' : '';
+                setFeedback(`Organization found: ${r.name || domain}${suffix}`, 'success');
+            } else {
+                setFeedback(r.message || 'Organization not found. Please check the domain.', 'error');
+            }
+        } catch (e) {
+            console.error('[OrgCheck]', e);
+            setFeedback("Couldn't connect. Please try again.", 'error');
+        }
+    }
+
+    /* ── Debounced input ── */
+    domainInput.addEventListener('input', () => {
+        clearTimeout(debounce);
+        const v = domainInput.value.trim();
+        if (!v) { setFeedback('', ''); submitBtn.disabled = true; return; }
+        debounce = setTimeout(() => checkOrg(v), 600);
+    });
+
+    /* ── Form submit ── */
+    document.getElementById('orgForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const domain = domainInput.value.trim();
+        if (!domain) { setFeedback('Please enter a domain name.', 'error'); return; }
+
+        setFeedback('Verifying…', 'loading');
+
+        try {
+            const r = await invoke('validate_organization', { domain });
+
+            if (r.valid) {
+                sessionStorage.setItem('orgDomain', domain);
+                if (r.org_id)      sessionStorage.setItem('orgId',      r.org_id);
+                if (r.name)        sessionStorage.setItem('orgName',     r.name);
+                if (r.sso_enabled) sessionStorage.setItem('ssoEnabled', 'true');
+                window.location.href = 'login.html';
+            } else {
+                setFeedback(r.message || 'Organization could not be verified.', 'error');
+            }
+        } catch (_) {
+            setFeedback('Connection error. Please check your internet.', 'error');
+        }
+    });
+</script>
+
+</body>
+</html>

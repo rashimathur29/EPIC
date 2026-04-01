@@ -1,0 +1,73 @@
+/* =============================================================
+   css/tokens.css
+   Design system variables — every colour, size, shadow and
+   z-index lives here. Nothing is hardcoded anywhere else.
+   ============================================================= */
+
+:root {
+    /* ── Brand ─────────────────────────────────────────── */
+    --clr-accent:           #6264a7;
+    --clr-accent-dark:      #4f5196;
+    --clr-accent-dim:       #ededf8;
+
+    /* ── Semantic ───────────────────────────────────────── */
+    --clr-danger:           #c4314b;
+    --clr-danger-dim:       #fde7e9;
+    --clr-success-dim:      #dff6dd;
+    --clr-success-border:   #92c353;
+    --clr-warn-dim:         #fff4ce;
+    --clr-warn-border:      #f9d900;
+    --clr-presence:         #92c353;
+
+    /* ── Neutrals ───────────────────────────────────────── */
+    --clr-bg:               #f3f2f1;
+    --clr-surface:          #ffffff;
+    --clr-hover:            rgba(0, 0, 0, 0.04);
+    --clr-border:           #e1dfdd;
+    --clr-border-light:     #edebe9;
+
+    /* ── Text ───────────────────────────────────────────── */
+    --clr-text:             #201f1e;
+    --clr-text-sub:         #605e5c;
+    --clr-text-subtle:      #a19f9d;
+
+    /* ── Layout ─────────────────────────────────────────── */
+    --titlebar-h:           48px;
+    --page-header-h:        48px;
+    --sidebar-w:            64px;
+
+    /* ── Radius ─────────────────────────────────────────── */
+    --r-sm:                 4px;
+    --r-md:                 8px;
+    --r-lg:                 12px;
+    --r-pill:               999px;
+
+    /* ── Elevation ──────────────────────────────────────── */
+    --shadow-xs:            0 1px 3px  rgba(0, 0, 0, 0.06);
+    --shadow-sm:            0 1px 6px  rgba(0, 0, 0, 0.08);
+    --shadow-md:            0 4px 16px rgba(0, 0, 0, 0.12);
+    --shadow-lg:            0 8px 32px rgba(0, 0, 0, 0.18);
+
+    /* ── Typography ─────────────────────────────────────── */
+    --font:                 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --fz-xs:                11px;
+    --fz-sm:                12px;
+    --fz-base:              14px;
+    --fz-md:                15px;
+    --fz-lg:                18px;
+    --fz-xl:                20px;
+    --fz-hero:              80px;
+
+    --fw-regular:           400;
+    --fw-medium:            500;
+    --fw-semi:              600;
+    --fw-bold:              700;
+
+    /* ── Z-index scale ──────────────────────────────────── */
+    --z-sidebar:            100;
+    --z-titlebar:           200;
+    --z-floating:           300;
+    --z-popover:            400;
+    --z-modal:              500;
+    --z-panel:              600;
+}

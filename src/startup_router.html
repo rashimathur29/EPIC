@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPIC</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="css/auth-header-override.css">
+
+    <script src="https://code.jquery.com/jquery-3.3.1.js"
+        integrity="sha256-2Kok7MbOyxpgUVvAk/HJ2jigOSYS2auK4Pfzbm7uH60="
+        crossorigin="anonymous"></script>
+    <script>$(function(){ $("#header").load("header.html"); });</script>
+
+    <style>
+        body { background: #ffffff !important; }
+
+        .page-wrapper {
+            align-items: center;
+            justify-content: center;
+        }
+
+        #loadingPanel {
+            display: flex; flex-direction: column;
+            align-items: center; gap: 18px; text-align: center;
+            padding: 40px;
+        }
+        .epic-logo {
+            font-size: 2rem; font-weight: 700;
+            color: #1a1a1a; letter-spacing: 0.06em;
+        }
+        .spinner {
+            width: 40px; height: 40px;
+            border: 3px solid #e5e7eb; border-top-color: #0078d4;
+            border-radius: 50%; animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .status-msg { font-size: 13px; color: #605e5c; }
+
+        /* Kicked panel */
+        #kickedPanel {
+            display: none; flex-direction: column;
+            align-items: center; gap: 16px;
+            max-width: 360px; width: 100%;
+            text-align: center; padding: 40px 44px;
+        }
+        .kicked-icon  { font-size: 2.5rem; }
+        .kicked-title { font-size: 20px; font-weight: 700; color: #a4262c; }
+        .kicked-body  { font-size: 13.5px; color: #605e5c; line-height: 1.6; }
+        .btn-proceed {
+            padding: 9px 28px; background: #0078d4; color: #fff;
+            border: none; border-radius: 2px;
+            font-size: 14px; font-weight: 600;
+            font-family: 'Segoe UI', sans-serif;
+            cursor: pointer; margin-top: 8px;
+            transition: background 0.15s;
+        }
+        .btn-proceed:hover { background: #106ebe; }
+
+        .auth-footer {
+            position: fixed; bottom: 20px; left: 0; right: 0;
+            display: flex; justify-content: center; gap: 20px;
+        }
+        .auth-footer a   { font-size: 12px; color: #605e5c; text-decoration: none; }
+        .auth-footer a:hover { text-decoration: underline; }
+        .auth-footer span { font-size: 12px; color: #605e5c; }
+    </style>
+</head>
+<body>
+
+    <div id="header"></div>
+
+    <div class="page-wrapper">
+
+        <!-- Loading state -->
+        <div id="loadingPanel">
+            <div class="epic-logo">EPIC</div>
+            <div class="spinner"></div>
+            <p class="status-msg" id="statusMsg">Checking session…</p>
+        </div>
+
+        <!-- Kicked state -->
+        <div id="kickedPanel">
+            <div class="kicked-icon">🚫</div>
+            <div class="kicked-title">Account removed</div>
+            <p class="kicked-body">
+                Your account has been removed from this organisation by an administrator.
+                Please contact your admin or sign in with a different account.
+            </p>
+            <button class="btn-proceed" onclick="proceedToOrg()">
+                Go to sign-in
+            </button>
+        </div>
+
+    </div>
+
+    <div class="auth-footer">
+        <span>©2025 Aiprus</span>
+        <a href="#">Privacy statement</a>
+        <a href="#">Terms of use</a>
+    </div>
+
+    <script type="text/javascript" src="js/window-controls.js"></script>
+    <script type="text/javascript" src="js/window-resize.js"></script>
+
+    <script>
+        const { invoke } = window.__TAURI__?.core
+            || { invoke: async () => ({ logged_in: false, kicked: false }) };
+
+        function setMsg(t) { document.getElementById('statusMsg').textContent = t; }
+
+        function showKicked() {
+            document.getElementById('loadingPanel').style.display = 'none';
+            document.getElementById('kickedPanel').style.display  = 'flex';
+        }
+
+        async function proceedToOrg() {
+            sessionStorage.clear();
+            // Resize back to small auth window
+            await resizeToAuthAndGo('find_your_organization.html');
+        }
+
+        window.addEventListener('load', async () => {
+            try {
+                setMsg('Checking session…');
+                const user = await invoke('get_current_user');
+
+                // ── CASE 1: Valid session → resize to dashboard, go to index ──
+                if (user && user.logged_in && !user.kicked) {
+                    setMsg('Resuming session…');
+                    if (user.email)      sessionStorage.setItem('userEmail',  user.email);
+                    if (user.user_id)    sessionStorage.setItem('userId',     user.user_id);
+                    if (user.first_name) sessionStorage.setItem('firstName',  user.first_name);
+                    if (user.last_name)  sessionStorage.setItem('lastName',   user.last_name);
+                    if (user.org_id)     sessionStorage.setItem('orgId',      user.org_id);
+                    if (user.org_name)   sessionStorage.setItem('orgName',    user.org_name);
+                    if (user.org_domain) sessionStorage.setItem('orgDomain',  user.org_domain);
+
+                    // Resize to full dashboard window then navigate
+                    await resizeToDashboardAndGo('index.html');
+                    return;
+                }
+
+                // ── CASE 2: Kicked → stay small, show message ──
+                if (user && user.kicked) {
+                    sessionStorage.clear();
+                    // Ensure window is auth-sized
+                    await resizeToAuthAndGo(''); // resize only, no navigation
+                    showKicked();
+                    return;
+                }
+
+                // ── CASE 3: No session → ensure small window, go to auth ──
+                setMsg('Loading…');
+                const hasDomain = !!sessionStorage.getItem('orgDomain');
+                // Small delay for smooth UX
+                setTimeout(async () => {
+                    await resizeToAuthAndGo(
+                        hasDomain ? 'login.html' : 'find_your_organization.html'
+                    );
+                }, 150);
+
+            } catch(err) {
+                console.error('[ROUTER]', err);
+                sessionStorage.clear();
+                await resizeToAuthAndGo('find_your_organization.html');
+            }
+        });
+    </script>
+</body>
+</html>

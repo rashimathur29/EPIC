@@ -1,0 +1,43 @@
+<!-- ══ BREAKS ══ -->
+<div class="two-col">
+    <div>
+        <div class="card" style="text-align:center;">
+            <div class="card-hdr"><span class="card-hdr__title">Add break timer</span></div>
+            <div class="time-picker">
+                <div class="tc">
+                    <button class="tc-btn" data-f="t-h" data-s="1"><i class="fas fa-chevron-up"></i></button>
+                    <input type="number" class="tc-val" id="t-h" value="00" min="0" max="23">
+                    <button class="tc-btn" data-f="t-h" data-s="-1"><i class="fas fa-chevron-down"></i></button>
+                    <div class="tc-lbl">hours</div>
+                </div>
+                <div class="time-sep">:</div>
+                <div class="tc">
+                    <button class="tc-btn" data-f="t-m" data-s="1"><i class="fas fa-chevron-up"></i></button>
+                    <input type="number" class="tc-val" id="t-m" value="00" min="0" max="59">
+                    <button class="tc-btn" data-f="t-m" data-s="-1"><i class="fas fa-chevron-down"></i></button>
+                    <div class="tc-lbl">mins</div>
+                </div>
+                <div class="time-sep">:</div>
+                <div class="tc">
+                    <button class="tc-btn" data-f="t-s" data-s="1"><i class="fas fa-chevron-up"></i></button>
+                    <input type="number" class="tc-val" id="t-s" value="00" min="0" max="59">
+                    <button class="tc-btn" data-f="t-s" data-s="-1"><i class="fas fa-chevron-down"></i></button>
+                    <div class="tc-lbl">secs</div>
+                </div>
+            </div>
+            <input type="text" id="t-name" placeholder="Timer name (optional)"
+                    style="width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:var(--font);font-size:13px;outline:none;margin-bottom:14px;">
+            <button class="btn-primary" id="add-timer-btn" style="width:100%;justify-content:center;">
+                <i class="fas fa-plus"></i> Add timer
+            </button>
+            <p style="font-size:12px;color:var(--text-muted);margin-top:12px;">You'll have no breaks until a timer is running.</p>
+        </div>
+    </div>
+    <div>
+        <div class="card">
+            <div class="card-hdr"><span class="card-hdr__title">Active timers</span></div>
+            <div id="timer-list"></div>
+            <div class="empty" id="timer-empty"><i class="far fa-hourglass"></i><p>No timers yet.<br>Add one on the left.</p></div>
+        </div>
+    </div>
+</div>

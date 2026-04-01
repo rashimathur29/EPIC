@@ -1,0 +1,82 @@
+<!--
+    header-dialog.html
+    Slim dialog-style title bar for login + org pages.
+    Height: 32px — matches Teams "Sign in to Microsoft Teams" bar exactly.
+    Layout: [EPIC text] ·············· [─][□][×]
+-->
+<style>
+.titlebar-dialog {
+    height: 32px;
+    background: #f3f2f1;
+    border-bottom: 1px solid #e1dfdd;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    position: relative;
+    z-index: 200;
+    -webkit-app-region: drag;
+    user-select: none;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+}
+
+.titlebar-dialog__name {
+    font-size: 12px;
+    font-weight: 400;
+    color: #323130;
+    padding: 0 12px;
+    flex-shrink: 0;
+    pointer-events: none;
+    -webkit-app-region: drag;
+}
+
+.titlebar-dialog__drag {
+    flex: 1;
+    height: 100%;
+    -webkit-app-region: drag;
+}
+
+.titlebar-dialog__wc-btn {
+    width: 46px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    color: #323130;
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.1s ease, color 0.1s ease;
+    -webkit-app-region: no-drag;
+    font-family: inherit;
+}
+
+.titlebar-dialog__wc-btn:hover        { background: rgba(0,0,0,.07); }
+.titlebar-dialog__wc-btn--close:hover { background: #c4314b; color: #fff; }
+</style>
+
+<div class="titlebar-dialog" role="banner" aria-label="Application title bar">
+    <span class="titlebar-dialog__name"> 
+        <img src="images/tab.png" alt="EPIC" style="width: 22px; height: 22px;"
+                 onerror="this.style.display='none';
+                          this.nextElementSibling.style.display='flex'">
+        <i class="fas fa-bolt icon-fallback"></i>
+    </span>
+    <div class="titlebar-dialog__drag"></div>
+
+    <button class="titlebar-dialog__wc-btn"
+            id="btn-minimize" title="Minimize" aria-label="Minimize">
+        <i class="far fa-window-minimize" aria-hidden="true"></i>
+    </button>
+
+    <button class="titlebar-dialog__wc-btn"
+            id="btn-maximize" title="Maximize" aria-label="Maximize">
+        <i class="far fa-window-maximize" aria-hidden="true"></i>
+    </button>
+
+    <button class="titlebar-dialog__wc-btn titlebar-dialog__wc-btn--close"
+            id="btn-close" title="Close" aria-label="Close">
+        <i class="fas fa-times" aria-hidden="true"></i>
+    </button>
+</div>

@@ -1,0 +1,1348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>EPIC — Employee Productivity &amp; Insight Console</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<style>
+/* ═══════════════════════════════════════════
+   RESET & TOKENS
+═══════════════════════════════════════════ */
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;}
+:root{
+  --accent:#6264a7;--accent-dk:#4f5196;--accent-dim:#eeeef8;
+  --green:#107c10;--green-dim:#dff6dd;--green-mid:#2e7d32;
+  --red:#c4314b;--red-dim:#fde7e9;
+  --amber:#c67c00;--amber-dim:#fff4ce;
+  --blue:#0067b8;--blue-dim:#deecf9;
+  --bg:#f5f5f5;--surface:#fff;
+  --border:#e0e0e0;--border-lt:#ebebeb;
+  --hover:#f0f0f0;--hover-dk:#e5e5e5;
+  --text:#201f1e;--text-sub:#605e5c;--text-muted:#a0a0a0;
+  --nav-w:252px;--bar-h:48px;
+  --r:8px;--r-sm:4px;--r-lg:12px;
+  --sh:0 1px 4px rgba(0,0,0,.08);--sh-md:0 4px 16px rgba(0,0,0,.12);
+  --font:'Segoe UI',system-ui,-apple-system,sans-serif;
+}
+html,body{height:100%;overflow:hidden;font-family:var(--font);font-size:14px;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased;}
+button{font-family:var(--font);cursor:pointer;border:none;background:none;}
+a{color:var(--accent);text-decoration:none;}
+
+/* ═══════════════════════════════════════════
+   TITLE BAR
+═══════════════════════════════════════════ */
+.tb{height:var(--bar-h);background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;flex-shrink:0;position:relative;z-index:200;-webkit-app-region:drag;user-select:none;}
+.tb__left{display:flex;align-items:center;gap:2px;padding:0 8px 0 10px;flex-shrink:0;-webkit-app-region:no-drag;}
+.tb__icon{width:24px;height:24px;display:flex;align-items:center;justify-content:center;margin-right:6px;}
+.tb__icon img{width:22px;height:22px;object-fit:contain;}
+.tb__icon .fb{display:none;font-size:18px;color:var(--accent);}
+.tb__nav{width:28px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-sm);color:var(--text-sub);font-size:11px;transition:background .12s;-webkit-app-region:no-drag;}
+.tb__nav:hover{background:var(--hover);}
+.tb__search{flex:1;max-width:520px;margin:0 auto;-webkit-app-region:no-drag;}
+.tb__si{position:relative;}
+.tb__si i{position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--text-muted);font-size:12px;pointer-events:none;}
+.tb__si input{width:100%;height:30px;padding:0 14px 0 32px;border:1px solid var(--border);border-radius:999px;font-family:var(--font);font-size:12px;color:var(--text);background:var(--bg);transition:border-color .15s,background .15s;}
+.tb__si input:focus{outline:none;border-color:var(--accent);background:var(--surface);border-radius:var(--r-sm);}
+.tb__si input::placeholder{color:var(--text-muted);}
+.tb__right{display:flex;align-items:center;flex-shrink:0;-webkit-app-region:no-drag;}
+.tb__ib{width:40px;height:var(--bar-h);display:flex;align-items:center;justify-content:center;color:var(--text-sub);font-size:13px;transition:background .12s;}
+.tb__ib:hover{background:var(--hover);}
+.tb__avbtn{width:40px;height:var(--bar-h);display:flex;align-items:center;justify-content:center;margin-right:4px;}
+.tb__av{width:30px;height:30px;border-radius:50%;background:var(--accent);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;position:relative;transition:box-shadow .15s;}
+.tb__avbtn:hover .tb__av{box-shadow:0 0 0 2px var(--accent);}
+.tb__av::after{content:'';position:absolute;bottom:0;right:0;width:9px;height:9px;background:#92c353;border:2px solid var(--surface);border-radius:50%;}
+.tb__wc{width:46px;height:var(--bar-h);display:flex;align-items:center;justify-content:center;color:var(--text-sub);font-size:10px;transition:background .12s,color .12s;}
+.tb__wc:hover{background:var(--hover);}
+.tb__wc--x:hover{background:#c4314b;color:#fff;}
+
+/* ═══════════════════════════════════════════
+   LAYOUT
+═══════════════════════════════════════════ */
+.app{display:flex;height:calc(100vh - var(--bar-h));overflow:hidden;}
+
+/* ═══════════════════════════════════════════
+   SIDE NAV — Teams style
+═══════════════════════════════════════════ */
+.nav{width:var(--nav-w);background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto;}
+.nav::-webkit-scrollbar{width:4px;}
+.nav::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px;}
+.nav-user{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border-lt);}
+.nav-av{width:34px;height:34px;border-radius:50%;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;position:relative;flex-shrink:0;}
+.nav-av::after{content:'';position:absolute;bottom:0;right:0;width:9px;height:9px;background:#92c353;border:2px solid var(--surface);border-radius:50%;}
+.nav-uname{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.nav-ustatus{font-size:11px;color:var(--green);margin-top:1px;}
+.nav-items{padding:6px 0;flex:1;}
+.nav-item{display:flex;align-items:center;gap:12px;width:100%;padding:9px 16px;font-size:14px;color:var(--text-sub);text-align:left;transition:background .12s,color .12s;border-left:3px solid transparent;}
+.nav-item:hover{background:var(--hover);color:var(--text);}
+.nav-item.active{background:var(--accent-dim);color:var(--accent);font-weight:600;border-left-color:var(--accent);}
+.nav-item i{width:18px;font-size:15px;text-align:center;flex-shrink:0;}
+.nav-div{height:1px;background:var(--border-lt);margin:4px 0;}
+.nav-bottom{border-top:1px solid var(--border-lt);}
+
+/* ═══════════════════════════════════════════
+   MAIN + PAGE
+═══════════════════════════════════════════ */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;background:var(--bg);}
+.pgbar{height:48px;background:var(--surface);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 24px;gap:10px;flex-shrink:0;}
+.pgbar__icon{font-size:16px;color:var(--accent);}
+.pgbar__title{font-size:16px;font-weight:600;}
+.pgscroll{flex:1;overflow-y:auto;padding:20px 24px 32px;}
+.pgscroll::-webkit-scrollbar{width:5px;}
+.pgscroll::-webkit-scrollbar-thumb{background:var(--border);border-radius:999px;}
+.page{display:none;}
+.page.active{display:block;}
+
+/* ═══════════════════════════════════════════
+   GRID HELPERS
+═══════════════════════════════════════════ */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px;}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;}
+.g-main{display:grid;grid-template-columns:1fr 320px;gap:14px;align-items:start;}
+.g-main--wide{display:grid;grid-template-columns:1fr 280px;gap:14px;align-items:start;}
+.col{display:flex;flex-direction:column;gap:14px;}
+.mt{margin-top:14px;}
+
+/* ═══════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════ */
+.card{background:var(--surface);border-radius:var(--r-lg);padding:18px 20px;box-shadow:var(--sh);border:1px solid var(--border-lt);}
+.card-sm{padding:14px 16px;}
+.ch{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;}
+.ch__title{font-size:13px;font-weight:600;color:var(--text);}
+.ch__sub{font-size:11px;color:var(--text-muted);margin-top:2px;}
+.ch__act{color:var(--text-muted);font-size:12px;padding:3px 6px;border-radius:var(--r-sm);transition:background .12s;}
+.ch__act:hover{background:var(--hover);color:var(--text);}
+
+/* ═══════════════════════════════════════════
+   STAT TILES (4-across on dashboard)
+═══════════════════════════════════════════ */
+.stat-tile{background:var(--surface);border-radius:var(--r-lg);padding:16px 18px;box-shadow:var(--sh);border:1px solid var(--border-lt);display:flex;flex-direction:column;gap:6px;}
+.st-icon{width:32px;height:32px;border-radius:var(--r);display:flex;align-items:center;justify-content:center;font-size:15px;margin-bottom:4px;}
+.st-val{font-size:22px;font-weight:300;color:var(--text);line-height:1;}
+.st-label{font-size:11px;color:var(--text-muted);font-weight:500;text-transform:uppercase;letter-spacing:.4px;}
+.st-sub{font-size:12px;color:var(--text-sub);margin-top:2px;}
+
+/* ═══════════════════════════════════════════
+   STATUS BADGES / PILLS
+═══════════════════════════════════════════ */
+.pill{display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:999px;font-size:11px;font-weight:600;}
+.pill-green{background:var(--green-dim);color:var(--green-mid);}
+.pill-red{background:var(--red-dim);color:var(--red);}
+.pill-amber{background:var(--amber-dim);color:var(--amber);}
+.pill-blue{background:var(--blue-dim);color:var(--blue);}
+.pill-gray{background:var(--hover-dk);color:var(--text-sub);}
+.pill__dot{width:6px;height:6px;border-radius:50%;background:currentColor;}
+.pill__dot.blink{animation:blink 1.2s ease-in-out infinite;}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* ═══════════════════════════════════════════
+   TIMELINE BAR (dashboard)
+═══════════════════════════════════════════ */
+.timeline-bar{display:flex;height:20px;border-radius:999px;overflow:hidden;gap:2px;}
+.tl-seg{height:100%;border-radius:2px;min-width:3px;transition:opacity .2s;}
+.tl-seg:hover{opacity:.75;cursor:default;}
+.tl-legend{display:flex;gap:16px;margin-top:8px;}
+.tl-leg-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--text-sub);}
+.tl-leg-dot{width:8px;height:8px;border-radius:2px;}
+
+/* ═══════════════════════════════════════════
+   ACTIVITY FEED (timeline events)
+═══════════════════════════════════════════ */
+.feed{display:flex;flex-direction:column;gap:0;}
+.feed-item{display:flex;align-items:flex-start;gap:10px;padding:9px 0;border-bottom:1px solid var(--border-lt);position:relative;}
+.feed-item:last-child{border-bottom:none;}
+.feed-dot{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0;margin-top:1px;}
+.feed-body{flex:1;min-width:0;}
+.feed-title{font-size:13px;font-weight:600;color:var(--text);}
+.feed-meta{font-size:11px;color:var(--text-muted);margin-top:2px;}
+.feed-badge{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;margin-left:auto;flex-shrink:0;align-self:center;}
+
+/* ═══════════════════════════════════════════
+   ALERT CARD
+═══════════════════════════════════════════ */
+.alert-item{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:var(--r);margin-bottom:8px;border:1px solid;}
+.alert-item:last-child{margin-bottom:0;}
+.alert-item--warn{background:var(--amber-dim);border-color:#f0c060;}
+.alert-item--info{background:var(--blue-dim);border-color:#90bfe0;}
+.alert-item--ok{background:var(--green-dim);border-color:#90c490;}
+.alert-icon{font-size:16px;flex-shrink:0;}
+.alert-body{flex:1;}
+.alert-title{font-size:12px;font-weight:600;}
+.alert-msg{font-size:11px;color:var(--text-sub);margin-top:1px;}
+.alert-time{font-size:11px;color:var(--text-muted);flex-shrink:0;}
+
+/* ═══════════════════════════════════════════
+   ACTIVE VS IDLE BAR (session card)
+═══════════════════════════════════════════ */
+.av-bar-wrap{height:8px;border-radius:999px;overflow:hidden;background:var(--border);margin:10px 0 6px;}
+.av-bar-fill{height:100%;border-radius:999px;background:var(--accent);transition:width .4s ease;}
+.av-legend{display:flex;justify-content:space-between;font-size:11px;color:var(--text-muted);}
+
+/* ═══════════════════════════════════════════
+   BUTTONS
+═══════════════════════════════════════════ */
+.btn-p{display:inline-flex;align-items:center;gap:8px;padding:9px 22px;background:var(--accent);color:#fff;border-radius:var(--r-sm);font-size:14px;font-weight:600;transition:background .15s,transform .1s;}
+.btn-p:hover{background:var(--accent-dk);}
+.btn-p:active{transform:scale(.98);}
+.btn-p:disabled{background:#c8c6c4;cursor:not-allowed;transform:none;}
+.btn-d{display:inline-flex;align-items:center;gap:8px;padding:9px 22px;background:var(--red);color:#fff;border-radius:var(--r-sm);font-size:14px;font-weight:600;transition:background .15s;}
+.btn-d:hover{background:#a52b41;}
+.btn-d:disabled{background:#c8c6c4;cursor:not-allowed;}
+.btn-g{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border:1px solid var(--border);border-radius:var(--r-sm);font-size:13px;color:var(--text-sub);transition:background .12s;}
+.btn-g:hover{background:var(--hover);}
+.sess-btns{display:flex;gap:10px;justify-content:center;margin-top:20px;}
+
+/* ═══════════════════════════════════════════
+   SESSION HERO
+═══════════════════════════════════════════ */
+.sess-hero{text-align:center;padding:6px 0 8px;}
+.sess-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border:1px solid var(--border);border-radius:999px;font-size:12px;color:var(--text-sub);margin-bottom:14px;}
+.sess-pill.running{border-color:var(--green);color:var(--green);}
+.sess-pill.running .pill__dot{background:var(--green);}
+.sess-time{font-size:60px;font-weight:300;color:var(--text);letter-spacing:-3px;line-height:1;font-variant-numeric:tabular-nums;margin-bottom:4px;}
+.sess-sublabel{font-size:12px;color:var(--text-muted);margin-bottom:18px;}
+.sess-desc{font-size:13px;color:var(--text-sub);line-height:1.55;margin-bottom:0;max-width:300px;margin-left:auto;margin-right:auto;}
+
+/* ═══════════════════════════════════════════
+   TASK LIST
+═══════════════════════════════════════════ */
+.task-item{display:flex;align-items:center;gap:10px;padding:8px 8px;border-radius:var(--r-sm);cursor:pointer;transition:background .12s;}
+.task-item:hover{background:var(--hover);}
+.tcheck{width:17px;height:17px;border:2px solid var(--border);border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;transition:border-color .15s,background .15s;}
+.task-item.done .tcheck{background:var(--accent);border-color:var(--accent);}
+.task-item.done .tcheck::after{content:'✓';color:#fff;font-size:9px;font-weight:700;}
+.ttxt{flex:1;font-size:13px;}
+.task-item.done .ttxt{color:var(--text-muted);text-decoration:line-through;}
+.tinput-row{display:none;gap:8px;padding:5px 0;}
+.tinput-row.show{display:flex;}
+.tinput-row input{flex:1;padding:7px 10px;border:1px solid var(--accent);border-radius:var(--r-sm);font-family:var(--font);font-size:13px;outline:none;}
+
+/* ═══════════════════════════════════════════
+   BREAK TIMERS
+═══════════════════════════════════════════ */
+.tpicker{display:flex;align-items:center;justify-content:center;gap:4px;margin:14px 0;}
+.tc{display:flex;flex-direction:column;align-items:center;gap:2px;}
+.tcbtn{width:38px;height:28px;display:flex;align-items:center;justify-content:center;border-radius:var(--r-sm);color:var(--text-sub);font-size:12px;transition:background .12s;}
+.tcbtn:hover{background:var(--hover);}
+.tcval{width:72px;height:58px;background:var(--hover);border-radius:var(--r-sm);display:flex;align-items:center;justify-content:center;font-size:32px;font-weight:300;color:var(--text);font-variant-numeric:tabular-nums;border:1px solid var(--border);font-family:var(--font);text-align:center;outline:none;}
+.tcval:focus{border-color:var(--accent);}
+.tcsep{font-size:32px;font-weight:300;color:var(--text-muted);padding-bottom:22px;}
+.tclbl{font-size:11px;color:var(--text-muted);}
+.tcard{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:8px;}
+.tcard:last-child{margin-bottom:0;}
+.tcard-info{flex:1;}
+.tcard-name{font-size:13px;font-weight:600;margin-bottom:3px;}
+.tcard-time{font-size:20px;font-weight:300;font-variant-numeric:tabular-nums;}
+.tcard-ctrls{display:flex;gap:6px;}
+.ib{width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;background:var(--hover);transition:background .12s;}
+.ib:hover{background:var(--hover-dk);}
+.ib--p{background:var(--accent);color:#fff;}
+.ib--p:hover{background:var(--accent-dk);}
+.ib--del:hover{background:var(--red-dim);color:var(--red);}
+
+/* ═══════════════════════════════════════════
+   APP / URL TRACKING TABLES
+═══════════════════════════════════════════ */
+.tbl{width:100%;border-collapse:collapse;font-size:13px;}
+.tbl thead th{text-align:left;padding:8px 10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;color:var(--text-muted);border-bottom:1px solid var(--border);}
+.tbl tbody tr{transition:background .1s;}
+.tbl tbody tr:hover{background:var(--hover);}
+.tbl td{padding:9px 10px;border-bottom:1px solid var(--border-lt);}
+.tbl tbody tr:last-child td{border-bottom:none;}
+.app-ico{width:20px;height:20px;border-radius:3px;display:inline-flex;align-items:center;justify-content:center;font-size:10px;background:var(--accent-dim);color:var(--accent);vertical-align:middle;margin-right:7px;}
+.bar-c{display:flex;align-items:center;gap:7px;}
+.bar-m{height:4px;background:var(--border);border-radius:999px;overflow:hidden;width:70px;}
+.bar-f{height:100%;border-radius:999px;}
+.tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;}
+.tag-work{background:var(--accent-dim);color:var(--accent);}
+.tag-nonwork{background:var(--red-dim);color:var(--red);}
+.tag-neutral{background:var(--hover-dk);color:var(--text-muted);}
+.tag-prod{background:var(--green-dim);color:var(--green-mid);}
+.tag-unprod{background:var(--amber-dim);color:var(--amber);}
+
+/* ═══════════════════════════════════════════
+   PRODUCTIVITY CLASSIFICATION BARS
+═══════════════════════════════════════════ */
+.class-bar{margin-bottom:14px;}
+.class-bar:last-child{margin-bottom:0;}
+.class-bar-hdr{display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;}
+.class-bar-hdr span{color:var(--text-sub);}
+.class-bar-hdr strong{color:var(--text);}
+.class-bar-track{height:7px;border-radius:999px;background:var(--border);overflow:hidden;}
+.class-bar-fill{height:100%;border-radius:999px;}
+
+/* ═══════════════════════════════════════════
+   CALLS
+═══════════════════════════════════════════ */
+.call-btns{display:flex;gap:12px;justify-content:center;margin:6px 0 20px;}
+.cbtn{width:50px;height:50px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:18px;transition:transform .1s;}
+.cbtn:hover{transform:scale(1.08);}
+.cbtn--v,.cbtn--a{background:var(--accent);color:#fff;}
+.cbtn--e{background:var(--red);color:#fff;}
+.cbtn.muted{background:var(--red);}
+.call-row{display:flex;align-items:center;gap:11px;padding:8px 8px;border-radius:var(--r-sm);transition:background .12s;}
+.call-row:hover{background:var(--hover);}
+.call-av{width:34px;height:34px;border-radius:50%;color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;}
+.call-info{flex:1;}
+.call-name{font-size:13px;font-weight:600;}
+.call-meta{font-size:11px;color:var(--text-muted);margin-top:1px;}
+
+/* ═══════════════════════════════════════════
+   PROFILE POPOVER
+═══════════════════════════════════════════ */
+.popover{position:fixed;width:292px;background:var(--surface);border:1px solid var(--border);border-radius:var(--r);box-shadow:var(--sh-md);z-index:400;opacity:0;pointer-events:none;transform:translateY(-6px);transition:opacity .18s,transform .18s;}
+.popover.open{opacity:1;pointer-events:all;transform:translateY(0);}
+.pop-hd{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--border-lt);}
+.pop-av{width:42px;height:42px;border-radius:50%;background:var(--accent);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:700;flex-shrink:0;}
+.pop-name{font-size:14px;font-weight:600;}
+.pop-email{font-size:11px;color:var(--text-muted);margin-top:2px;}
+.pop-item{display:flex;align-items:center;gap:10px;width:100%;padding:8px 16px;font-size:14px;color:var(--text);text-align:left;transition:background .12s;}
+.pop-item:hover{background:var(--hover);}
+.pop-item i{width:15px;color:var(--text-sub);font-size:13px;text-align:center;}
+.pop-item--d{color:var(--red);}
+.pop-item--d i{color:var(--red);}
+.pop-item--d:hover{background:var(--red-dim);}
+.pop-div{height:1px;background:var(--border-lt);margin:4px 0;}
+.pop-ft{display:flex;justify-content:space-between;padding:8px 16px 10px;border-top:1px solid var(--border-lt);font-size:11px;color:var(--text-muted);}
+.pop-ft a{color:var(--text-muted);}
+
+/* ═══════════════════════════════════════════
+   EMPTY STATE
+═══════════════════════════════════════════ */
+.empty{text-align:center;padding:28px 16px;color:var(--text-muted);}
+.empty i{font-size:28px;margin-bottom:9px;display:block;}
+.empty p{font-size:13px;}
+
+/* ═══════════════════════════════════════════
+   GLANCE ROWS
+═══════════════════════════════════════════ */
+.grow{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid var(--border-lt);font-size:13px;}
+.grow:last-child{border-bottom:none;}
+.grow span{color:var(--text-sub);}
+.grow strong{color:var(--text);}
+
+/* ═══════════════════════════════════════════
+   SECTION LABEL
+═══════════════════════════════════════════ */
+.sec-label{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:10px;margin-top:20px;}
+.sec-label:first-child{margin-top:0;}
+</style>
+</head>
+<body>
+
+<!-- TITLE BAR -->
+<header class="tb">
+  <div class="tb__left">
+    <div class="tb__icon">
+      <img src="images/tab.png" alt="EPIC" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+      <i class="fas fa-bolt fb"></i>
+    </div>
+    <button class="tb__nav" onclick="history.back()"><i class="fas fa-chevron-left"></i></button>
+    <button class="tb__nav" onclick="history.forward()"><i class="fas fa-chevron-right"></i></button>
+  </div>
+  <div class="tb__search"><div class="tb__si">
+    <i class="fas fa-search"></i>
+    <input type="search" placeholder="Search (Ctrl+E)" autocomplete="off" spellcheck="false">
+  </div></div>
+  <div class="tb__right">
+    <button class="tb__ib"><i class="fas fa-ellipsis-h"></i></button>
+    <button class="tb__avbtn" id="btn-profile">
+      <div class="tb__av" id="tb-av">RM</div>
+    </button>
+    <button class="tb__wc" id="btn-minimize"><i class="far fa-window-minimize"></i></button>
+    <button class="tb__wc" id="btn-maximize"><i class="far fa-window-maximize"></i></button>
+    <button class="tb__wc tb__wc--x" id="btn-close"><i class="fas fa-times"></i></button>
+  </div>
+</header>
+
+<!-- PROFILE POPOVER -->
+<div class="popover" id="popover">
+  <div class="pop-hd">
+    <div class="pop-av" id="pop-av">RM</div>
+    <div><div class="pop-name" id="pop-name">User</div><div class="pop-email" id="pop-email"></div></div>
+  </div>
+  <div style="padding:6px 0;">
+    <button class="pop-item" id="pop-analytics"><i class="fas fa-chart-line"></i>Send Analytics</button>
+    <button class="pop-item" id="pop-refresh"><i class="fas fa-sync-alt"></i>Refresh Data</button>
+    <button class="pop-item" id="pop-logs"><i class="fas fa-file-export"></i>Send Logs</button>
+    <div class="pop-div"></div>
+    <button class="pop-item" id="pop-about"><i class="fas fa-info-circle"></i>About EPIC</button>
+    <div class="pop-div"></div>
+    <button class="pop-item pop-item--d" id="pop-signout"><i class="fas fa-sign-out-alt"></i>Sign out</button>
+  </div>
+  <div class="pop-ft"><span>v1.0.0</span><a href="#">Privacy</a></div>
+</div>
+
+<!-- APP -->
+<div class="app">
+
+  <!-- SIDE NAV -->
+  <nav class="nav">
+    <div class="nav-user">
+      <div class="nav-av" id="nav-av">RM</div>
+      <div><div class="nav-uname" id="nav-name">User</div><div class="nav-ustatus">● Available</div></div>
+    </div>
+    <div class="nav-items">
+      <button class="nav-item active" data-page="dashboard"><i class="fas fa-th-large"></i>Dashboard</button>
+      <button class="nav-item" data-page="session"><i class="fas fa-clock"></i>Productivity Session</button>
+      <button class="nav-item" data-page="breaks"><i class="fas fa-hourglass-half"></i>Break Timers</button>
+      <button class="nav-item" data-page="apps"><i class="fas fa-window-restore"></i>Apps &amp; URLs</button>
+      <button class="nav-item" data-page="calls"><i class="fas fa-phone"></i>Calls</button>
+      <div class="nav-div"></div>
+    </div>
+    <div class="nav-bottom">
+      <button class="nav-item" data-page="settings"><i class="fas fa-cog"></i>Settings</button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="pgbar">
+      <i class="fas fa-th-large pgbar__icon" id="pb-icon"></i>
+      <span class="pgbar__title" id="pb-title">Dashboard</span>
+    </div>
+    <div class="pgscroll">
+
+      <!-- ════════════════════════════════
+           DASHBOARD
+      ════════════════════════════════ -->
+      <div class="page active" id="page-dashboard">
+
+        <!-- Row 1: 4 stat tiles -->
+        <div class="g4">
+
+          <!-- Today Status -->
+          <div class="stat-tile">
+            <div class="st-icon" style="background:var(--green-dim);color:var(--green-mid);">
+              <i class="fas fa-circle"></i>
+            </div>
+            <div class="st-val" id="ds-status-val">Idle</div>
+            <div class="st-label">Current status</div>
+            <div class="st-sub" id="ds-status-since">Not checked in</div>
+          </div>
+
+          <!-- Productive Time -->
+          <div class="stat-tile">
+            <div class="st-icon" style="background:var(--accent-dim);color:var(--accent);">
+              <i class="fas fa-bolt"></i>
+            </div>
+            <div class="st-val" id="ds-active-val">0h 0m</div>
+            <div class="st-label">Active time today</div>
+            <div class="st-sub" id="ds-idle-sub">0m idle so far</div>
+          </div>
+
+          <!-- Focus Score -->
+          <div class="stat-tile">
+            <div class="st-icon" style="background:var(--amber-dim);color:var(--amber);">
+              <i class="fas fa-fire"></i>
+            </div>
+            <div class="st-val" id="ds-score-val">—</div>
+            <div class="st-label">Focus score</div>
+            <div class="st-sub" id="ds-score-sub">Based on activity ratio</div>
+          </div>
+
+          <!-- Breaks -->
+          <div class="stat-tile">
+            <div class="st-icon" style="background:var(--blue-dim);color:var(--blue);">
+              <i class="fas fa-coffee"></i>
+            </div>
+            <div class="st-val" id="ds-breaks-val">0</div>
+            <div class="st-label">Breaks today</div>
+            <div class="st-sub" id="ds-breaks-sub">0m total break time</div>
+          </div>
+
+        </div><!-- /g4 -->
+
+        <div class="g-main mt">
+
+          <!-- LEFT column -->
+          <div class="col">
+
+            <!-- Timeline Summary Card -->
+            <div class="card">
+              <div class="ch">
+                <div>
+                  <div class="ch__title">📅 Timeline — Today</div>
+                  <div class="ch__sub">Active · Idle · Break distribution across your session</div>
+                </div>
+              </div>
+              <!-- Timeline bar: segments built from user_activity_minute + user_breaks -->
+              <div class="timeline-bar" id="tl-bar">
+                <!-- rendered by JS -->
+                <div class="tl-seg" style="flex:1;background:var(--border);" title="No session yet"></div>
+              </div>
+              <div class="tl-legend">
+                <div class="tl-leg-item"><div class="tl-leg-dot" style="background:var(--accent);"></div>Active</div>
+                <div class="tl-leg-item"><div class="tl-leg-dot" style="background:#f0c060;"></div>Idle</div>
+                <div class="tl-leg-item"><div class="tl-leg-dot" style="background:var(--blue-dim);border:1px solid #90bfe0;"></div>Break</div>
+                <div class="tl-leg-item"><div class="tl-leg-dot" style="background:var(--border);"></div>Locked / offline</div>
+              </div>
+            </div>
+
+            <!-- Activity Timeline (checkin events feed) -->
+            <div class="card">
+              <div class="ch">
+                <div class="ch__title">Activity Timeline</div>
+                <div class="ch__sub" style="font-size:11px;color:var(--text-muted);">Check-ins, breaks, check-outs today</div>
+              </div>
+              <div class="feed" id="activity-feed">
+                <div class="empty" style="padding:16px 0;"><i class="far fa-clock" style="font-size:22px;"></i><p>Check in to see your timeline</p></div>
+              </div>
+            </div>
+
+            <!-- Inactivity Alerts -->
+            <div class="card">
+              <div class="ch"><div class="ch__title">🚨 Inactivity Alerts</div></div>
+              <div id="alert-list">
+                <div class="alert-item alert-item--ok">
+                  <span class="alert-icon" style="color:var(--green);">✓</span>
+                  <div class="alert-body"><div class="alert-title">No alerts</div><div class="alert-msg">All good — no long inactivity periods detected today</div></div>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /left col -->
+
+          <!-- RIGHT column -->
+          <div class="col">
+
+            <!-- Active vs Idle breakdown -->
+            <div class="card">
+              <div class="ch"><div class="ch__title">⏱️ Productive Time</div></div>
+              <div style="margin-bottom:14px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+                  <span style="color:var(--accent);font-weight:600;">Active</span>
+                  <span id="ds-active-pct" style="color:var(--text-sub);">0%</span>
+                </div>
+                <div class="av-bar-wrap"><div class="av-bar-fill" id="ds-active-bar" style="width:0%;"></div></div>
+                <div class="av-legend">
+                  <span id="ds-active-time">0m active</span>
+                  <span id="ds-idle-time">0m idle</span>
+                </div>
+              </div>
+              <div class="grow"><span>Keystrokes</span><strong id="ds-keys">—</strong></div>
+              <div class="grow"><span>Mouse moves</span><strong id="ds-mouse">—</strong></div>
+              <div class="grow"><span>Mouse clicks</span><strong id="ds-clicks">—</strong></div>
+              <div class="grow"><span>Idle seconds</span><strong id="ds-idle-sec">—</strong></div>
+            </div>
+
+            <!-- Quick app summary (top 3) -->
+            <div class="card">
+              <div class="ch">
+                <div class="ch__title">Top Apps Now</div>
+                <button class="ch__act" onclick="navigate('apps')">See all →</button>
+              </div>
+              <div id="dash-top-apps">
+                <div class="empty" style="padding:12px 0;"><i class="fas fa-window-restore" style="font-size:20px;"></i><p>Check in to track apps</p></div>
+              </div>
+            </div>
+
+            <!-- Session glance -->
+            <div class="card">
+              <div class="ch"><div class="ch__title">Session Info</div></div>
+              <div class="grow"><span>Check-in time</span><strong id="ds-checkin">—</strong></div>
+              <div class="grow"><span>Session duration</span><strong id="ds-duration">—</strong></div>
+              <div class="grow"><span>Breaks taken</span><strong id="ds-bcount">—</strong></div>
+              <div class="grow"><span>Last active</span><strong id="ds-lastact">—</strong></div>
+            </div>
+
+          </div><!-- /right col -->
+        </div><!-- /g-main -->
+      </div><!-- /dashboard -->
+
+
+      <!-- ════════════════════════════════
+           PRODUCTIVITY SESSION
+      ════════════════════════════════ -->
+      <div class="page" id="page-session">
+        <div class="g-main">
+
+          <!-- LEFT: stopwatch + activity breakdown -->
+          <div class="col">
+            <div class="card">
+              <div class="ch">
+                <div><div class="ch__title">Productivity Session</div><div class="ch__sub">Track your active work time</div></div>
+              </div>
+              <div class="sess-hero">
+                <div class="sess-pill" id="sess-pill">
+                  <span class="pill__dot blink" style="background:var(--text-muted);"></span>
+                  <span id="sess-pill-txt">Not started</span>
+                </div>
+                <div class="sess-time" id="stopwatchDisplay">00:00:00</div>
+                <div class="sess-sublabel">active time this session</div>
+                <p class="sess-desc">Keyboard, mouse and app usage are tracked during each session for productivity reporting.</p>
+              </div>
+              <div class="sess-btns">
+                <button class="btn-p" id="startStopwatch"><i class="fas fa-play"></i> Check in</button>
+                <button class="btn-d" id="endStopwatch" disabled><i class="fas fa-stop"></i> Check out</button>
+              </div>
+            </div>
+
+            <!-- Session Productivity Card -->
+            <div class="card">
+              <div class="ch"><div class="ch__title">Session Productivity</div><div class="ch__sub">Active vs idle within this session</div></div>
+              <div style="margin-bottom:12px;">
+                <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+                  <span style="color:var(--accent);font-weight:600;">Active</span>
+                  <span id="sp-pct" style="color:var(--text-sub);">—</span>
+                </div>
+                <div class="av-bar-wrap"><div class="av-bar-fill" id="sp-bar" style="width:0%;"></div></div>
+                <div class="av-legend"><span id="sp-active">0m active</span><span id="sp-idle">0m idle</span></div>
+              </div>
+              <div class="g2" style="gap:8px;margin-top:12px;">
+                <div class="card card-sm" style="text-align:center;border:1px solid var(--border-lt);">
+                  <div style="font-size:20px;font-weight:300;" id="sp-keys">—</div>
+                  <div style="font-size:11px;color:var(--text-muted);">Keystrokes</div>
+                </div>
+                <div class="card card-sm" style="text-align:center;border:1px solid var(--border-lt);">
+                  <div style="font-size:20px;font-weight:300;" id="sp-clicks">—</div>
+                  <div style="font-size:11px;color:var(--text-muted);">Mouse clicks</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: tasks -->
+          <div class="col">
+            <div class="card">
+              <div class="ch">
+                <span class="ch__title" style="display:flex;align-items:center;gap:7px;">
+                  <i class="fas fa-check-square" style="color:var(--accent);"></i>Tasks
+                </span>
+                <button class="ch__act" id="task-add-btn"><i class="fas fa-plus"></i></button>
+              </div>
+              <p style="font-size:13px;color:var(--text-muted);margin-bottom:10px;">Select a task for your session</p>
+              <div class="tinput-row" id="tinput-row">
+                <input type="text" id="task-input" placeholder="Task name…" maxlength="80">
+                <button class="btn-p" style="padding:7px 12px;font-size:12px;" id="task-save">Add</button>
+                <button class="btn-g" style="padding:7px 12px;font-size:12px;" id="task-cancel">✕</button>
+              </div>
+              <div id="task-list"></div>
+              <div class="empty" id="task-empty" style="padding:16px 0 4px;">
+                <i class="far fa-clipboard" style="font-size:24px;"></i>
+                <p>No tasks yet</p>
+              </div>
+            </div>
+
+            <!-- Session events (quick view) -->
+            <div class="card">
+              <div class="ch"><div class="ch__title">Today's Events</div></div>
+              <div class="feed" id="sess-feed">
+                <div class="empty" style="padding:12px 0;"><i class="far fa-clock" style="font-size:20px;"></i><p>Check in to see events</p></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div><!-- /session -->
+
+
+      <!-- ════════════════════════════════
+           BREAK TIMERS
+      ════════════════════════════════ -->
+      <div class="page" id="page-breaks">
+        <div class="g-main--wide g-main">
+          <div>
+            <div class="card" style="text-align:center;">
+              <div class="ch"><div class="ch__title">Add break timer</div></div>
+              <div class="tpicker">
+                <div class="tc">
+                  <button class="tcbtn" data-f="t-h" data-s="1"><i class="fas fa-chevron-up"></i></button>
+                  <input type="number" class="tcval" id="t-h" value="00" min="0" max="23">
+                  <button class="tcbtn" data-f="t-h" data-s="-1"><i class="fas fa-chevron-down"></i></button>
+                  <div class="tclbl">hours</div>
+                </div>
+                <div class="tcsep">:</div>
+                <div class="tc">
+                  <button class="tcbtn" data-f="t-m" data-s="1"><i class="fas fa-chevron-up"></i></button>
+                  <input type="number" class="tcval" id="t-m" value="25" min="0" max="59">
+                  <button class="tcbtn" data-f="t-m" data-s="-1"><i class="fas fa-chevron-down"></i></button>
+                  <div class="tclbl">mins</div>
+                </div>
+                <div class="tcsep">:</div>
+                <div class="tc">
+                  <button class="tcbtn" data-f="t-s" data-s="1"><i class="fas fa-chevron-up"></i></button>
+                  <input type="number" class="tcval" id="t-s" value="00" min="0" max="59">
+                  <button class="tcbtn" data-f="t-s" data-s="-1"><i class="fas fa-chevron-down"></i></button>
+                  <div class="tclbl">secs</div>
+                </div>
+              </div>
+              <input type="text" id="t-name" placeholder="Timer name (optional)"
+                style="width:100%;padding:8px 11px;border:1px solid var(--border);border-radius:var(--r-sm);font-family:var(--font);font-size:13px;outline:none;margin-bottom:12px;">
+              <button class="btn-p" id="add-timer-btn" style="width:100%;justify-content:center;">
+                <i class="fas fa-plus"></i> Add timer
+              </button>
+              <p style="font-size:12px;color:var(--text-muted);margin-top:10px;">You'll have no breaks until a timer is running.</p>
+            </div>
+          </div>
+          <div>
+            <div class="card">
+              <div class="ch"><div class="ch__title">Active timers</div></div>
+              <div id="timer-list"></div>
+              <div class="empty" id="timer-empty"><i class="far fa-hourglass"></i><p>No timers yet</p></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /breaks -->
+
+
+      <!-- ════════════════════════════════
+           APPS & URLs
+      ════════════════════════════════ -->
+      <div class="page" id="page-apps">
+
+        <div class="sec-label">Applications</div>
+        <!-- Applications Usage Card -->
+        <div class="card">
+          <div class="ch">
+            <div><div class="ch__title">Applications Usage — Today</div><div class="ch__sub">From active_window table — time per process</div></div>
+            <span style="font-size:11px;color:var(--text-muted);">Live · updates every 30s</span>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>Application</th><th>Time spent</th><th>Usage</th><th>Category</th></tr></thead>
+            <tbody id="app-tbody">
+              <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:22px;">Check in to start tracking</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="sec-label" style="margin-top:18px;">Productivity Classification</div>
+        <div class="g2">
+          <!-- Productivity Classification Card -->
+          <div class="card">
+            <div class="ch"><div class="ch__title">Productive vs Unproductive</div><div class="ch__sub">Based on app categorisation</div></div>
+            <div class="class-bar">
+              <div class="class-bar-hdr"><span>Productive tools</span><strong id="pc-prod-pct">—</strong></div>
+              <div class="class-bar-track"><div class="class-bar-fill" id="pc-prod-bar" style="width:0%;background:var(--green-mid);"></div></div>
+            </div>
+            <div class="class-bar">
+              <div class="class-bar-hdr"><span>Neutral tools</span><strong id="pc-neu-pct">—</strong></div>
+              <div class="class-bar-track"><div class="class-bar-fill" id="pc-neu-bar" style="width:0%;background:var(--amber);"></div></div>
+            </div>
+            <div class="class-bar">
+              <div class="class-bar-hdr"><span>Unproductive</span><strong id="pc-unprod-pct">—</strong></div>
+              <div class="class-bar-track"><div class="class-bar-fill" id="pc-unprod-bar" style="width:0%;background:var(--red);"></div></div>
+            </div>
+          </div>
+
+          <!-- Top Tools Card -->
+          <div class="card">
+            <div class="ch"><div class="ch__title">🏆 Most Used Today</div></div>
+            <div id="top-tools-list">
+              <div class="empty" style="padding:12px 0;"><i class="fas fa-trophy" style="font-size:20px;"></i><p>Check in to see top tools</p></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sec-label" style="margin-top:18px;">Browser URLs</div>
+        <!-- Website Usage Card -->
+        <div class="card">
+          <div class="ch">
+            <div><div class="ch__title">Website Usage — Today</div><div class="ch__sub">URLs visited · Work / Non-work categorisation</div></div>
+          </div>
+          <table class="tbl">
+            <thead><tr><th>Website</th><th>Time spent</th><th>Visits</th><th>Category</th></tr></thead>
+            <tbody id="url-tbody">
+              <tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:22px;">Check in to start tracking</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div><!-- /apps -->
+
+
+      <!-- ════════════════════════════════
+           CALLS
+      ════════════════════════════════ -->
+      <div class="page" id="page-calls">
+        <div class="g-main--wide g-main">
+          <div>
+            <div class="card">
+              <div class="ch"><div class="ch__title">Call Controls</div></div>
+              <div class="call-btns">
+                <button class="cbtn cbtn--v" id="btn-call-video"><i class="fas fa-video"></i></button>
+                <button class="cbtn cbtn--a" id="btn-call-audio"><i class="fas fa-microphone"></i></button>
+                <button class="cbtn cbtn--e" id="btn-call-end"><i class="fas fa-phone-slash"></i></button>
+              </div>
+              <p style="font-size:11px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px;">Recent calls</p>
+              <div>
+                <div class="call-row"><div class="call-av" style="background:var(--accent);">JD</div><div class="call-info"><div class="call-name">John Doe</div><div class="call-meta"><i class="fas fa-video"></i> Today · 15 min</div></div><i class="fas fa-phone-alt" style="font-size:11px;color:var(--accent);"></i></div>
+                <div class="call-row"><div class="call-av" style="background:#c4314b;">SM</div><div class="call-info"><div class="call-name">Sarah Miller</div><div class="call-meta"><i class="fas fa-phone"></i> Yesterday · 8 min</div></div><i class="fas fa-phone-alt" style="font-size:11px;color:var(--accent);"></i></div>
+                <div class="call-row"><div class="call-av" style="background:#107c10;">TW</div><div class="call-info"><div class="call-name">Team Weekly</div><div class="call-meta"><i class="fas fa-video"></i> Monday · 45 min</div></div><i class="fas fa-phone-alt" style="font-size:11px;color:var(--accent);"></i></div>
+              </div>
+            </div>
+          </div>
+          <div>
+            <div class="card">
+              <div class="ch"><div class="ch__title">This week</div></div>
+              <div class="grow"><span>Total calls</span><strong>3</strong></div>
+              <div class="grow"><span>Total duration</span><strong>1h 08m</strong></div>
+              <div class="grow"><span>Video calls</span><strong>2</strong></div>
+              <div class="grow"><span>Audio calls</span><strong>1</strong></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /calls -->
+
+
+      <!-- ════════════════════════════════
+           SETTINGS
+      ════════════════════════════════ -->
+      <div class="page" id="page-settings">
+        <div class="card" style="max-width:480px;">
+          <div class="ch"><div class="ch__title">Settings</div></div>
+          <div style="display:flex;flex-direction:column;gap:16px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <div><div style="font-size:13px;font-weight:600;">Daily goal</div><div style="font-size:12px;color:var(--text-muted);">Target productive hours</div></div>
+              <select id="goal-sel" style="border:1px solid var(--border);border-radius:var(--r-sm);padding:6px 10px;font-family:var(--font);font-size:13px;outline:none;">
+                <option value="6">6 hours</option><option value="7">7 hours</option>
+                <option value="8" selected>8 hours</option><option value="9">9 hours</option><option value="10">10 hours</option>
+              </select>
+            </div>
+            <div style="height:1px;background:var(--border-lt);"></div>
+            <div><div style="font-size:13px;font-weight:600;margin-bottom:3px;">Account</div><div style="font-size:12px;color:var(--text-muted);" id="s-email">—</div></div>
+            <div style="height:1px;background:var(--border-lt);"></div>
+            <button class="btn-d" id="s-signout" style="width:fit-content;"><i class="fas fa-sign-out-alt"></i> Sign out</button>
+          </div>
+        </div>
+      </div><!-- /settings -->
+
+    </div><!-- /pgscroll -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<script defer>
+'use strict';
+/* ────────────────────────────────────────────
+   TAURI BRIDGE
+──────────────────────────────────────────── */
+const invoke = window.__TAURI__?.core?.invoke
+  ?? (async (c,a)=>{ console.log('[DEV]',c,a); return null; });
+
+const $  = id => document.getElementById(id);
+const ST = (id,v) => { const e=$(id); if(e) e.textContent=v; };
+const FMT = s => [Math.floor(s/3600),Math.floor((s%3600)/60),s%60].map(v=>String(v).padStart(2,'0')).join(':');
+const FMTm = s => { const h=Math.floor(s/3600),m=Math.floor((s%3600)/60); return h>0?`${h}h ${m}m`:`${m}m`; };
+
+/* ────────────────────────────────────────────
+   NAV
+──────────────────────────────────────────── */
+const NAV_META = {
+  dashboard:{ title:'Dashboard',           icon:'fas fa-th-large'       },
+  session:  { title:'Productivity Session',icon:'fas fa-clock'          },
+  breaks:   { title:'Break Timers',        icon:'fas fa-hourglass-half' },
+  apps:     { title:'Apps & URLs',         icon:'fas fa-window-restore' },
+  calls:    { title:'Calls',               icon:'fas fa-phone'          },
+  settings: { title:'Settings',            icon:'fas fa-cog'            },
+};
+
+function navigate(page) {
+  document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('active'));
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  const btn = document.querySelector(`.nav-item[data-page="${page}"]`);
+  if(btn) btn.classList.add('active');
+  const pg = $(`page-${page}`);
+  if(pg) pg.classList.add('active');
+  const m = NAV_META[page];
+  if(m){ ST('pb-title',m.title); const ic=$('pb-icon'); if(ic) ic.className=`${m.icon} pgbar__icon`; }
+}
+
+document.querySelectorAll('.nav-item[data-page]').forEach(btn=>{
+  btn.addEventListener('click',()=>navigate(btn.dataset.page));
+});
+
+/* ────────────────────────────────────────────
+   WINDOW CONTROLS
+──────────────────────────────────────────── */
+const _w=()=>window.__TAURI__?.window?.getCurrentWindow?.();
+$('btn-minimize')?.addEventListener('click',async()=>{ try{await _w()?.minimize();}catch{} });
+$('btn-maximize')?.addEventListener('click',async()=>{ try{const w=_w();if(!w)return;(await w.isMaximized())?w.unmaximize():w.maximize();}catch{} });
+$('btn-close')?.addEventListener('click',async()=>{ try{await _w()?.close();}catch{} });
+
+/* ────────────────────────────────────────────
+   POPOVER
+──────────────────────────────────────────── */
+const pop=$('popover');
+$('btn-profile')?.addEventListener('click',e=>{
+  e.stopPropagation();
+  const open=pop.classList.toggle('open');
+  const r=e.currentTarget.getBoundingClientRect();
+  pop.style.top=(r.bottom+4)+'px';pop.style.right=(window.innerWidth-r.right)+'px';pop.style.left='auto';
+});
+document.addEventListener('click',e=>{ if(!pop.contains(e.target)&&e.target!==$('btn-profile')) pop.classList.remove('open'); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') pop.classList.remove('open'); });
+
+async function doSignout(){ try{await invoke('logout');}catch{} sessionStorage.clear(); window.location.replace('find_your_organization.html'); }
+$('pop-signout')?.addEventListener('click',doSignout);
+$('s-signout')?.addEventListener('click',doSignout);
+$('pop-analytics')?.addEventListener('click',async()=>{ pop.classList.remove('open'); try{await invoke('send_analytics');banner('Analytics sent','success');}catch(e){banner('Failed: '+e,'error');} });
+$('pop-refresh')?.addEventListener('click',async()=>{ pop.classList.remove('open'); try{await invoke('refresh_data');banner('Refreshed','success');}catch{} });
+$('pop-logs')?.addEventListener('click',async()=>{ pop.classList.remove('open'); try{await invoke('send_logs');banner('Logs sent','success');}catch{} });
+$('pop-about')?.addEventListener('click',()=>{ pop.classList.remove('open'); alert('EPIC v1.0.0\nAiprus Software\nsupport@aiprus.com'); });
+
+/* ────────────────────────────────────────────
+   BANNER
+──────────────────────────────────────────── */
+function banner(msg,type='info',dur=5000){
+  const old=$('bnr');if(old)old.remove();
+  const el=document.createElement('div');el.id='bnr';
+  const c={success:'#107c10',error:'#c4314b',warn:'#c67c00',info:'#6264a7'};
+  Object.assign(el.style,{position:'fixed',top:'58px',left:'50%',transform:'translateX(-50%)',
+    padding:'9px 22px',borderRadius:'4px',color:'#fff',fontWeight:'600',zIndex:'9999',
+    boxShadow:'0 4px 12px rgba(0,0,0,.18)',fontSize:'13px',fontFamily:'var(--font)',
+    background:c[type]??c.info,whiteSpace:'nowrap',transition:'opacity .4s'});
+  el.textContent=msg;document.body.appendChild(el);
+  if(dur>0)setTimeout(()=>{el.style.opacity='0';setTimeout(()=>el.remove(),400);},dur);
+}
+
+/* ────────────────────────────────────────────
+   SESSION STATE
+──────────────────────────────────────────── */
+let swInt=null, activeSec=0, sessionRunning=false;
+let sessionMeta = { checkinTime:null, keystrokes:0, mouseClicks:0, mouseMoves:0, idleSec:0 };
+
+async function syncSW(){
+  try{ activeSec = await invoke('get_total_active_seconds') ?? activeSec; }catch{}
+  ST('stopwatchDisplay', FMT(activeSec));
+  updateSessionCard();
+  updateDashStats();
+}
+
+function startSW(){ syncSW(); swInt=setInterval(syncSW,2000); }
+function stopSW(){ clearInterval(swInt);swInt=null;activeSec=0; ST('stopwatchDisplay','00:00:00'); updateSessionCard(); updateDashStats(); }
+
+function setSession(on){
+  sessionRunning=on;
+  const s=$('startStopwatch'),e=$('endStopwatch'),pill=$('sess-pill');
+  if(s){s.disabled=on;s.innerHTML=on?'<i class="fas fa-play"></i> Check in':'<i class="fas fa-play"></i> Check in';}
+  if(e) e.disabled=!on;
+  if(pill){ pill.classList.toggle('running',on); ST('sess-pill-txt',on?'Session active':'Not started'); }
+  // update dot color
+  const dot=pill?.querySelector('.pill__dot');
+  if(dot) dot.style.background=on?'var(--green)':'var(--text-muted)';
+}
+
+$('startStopwatch')?.addEventListener('click',async()=>{
+  const btn=$('startStopwatch');
+  try{
+    const running=await invoke('get_status')??false;
+    if(running){banner('Already checked in!','warn');return;}
+    if(btn){btn.disabled=true;btn.innerHTML='<i class="fas fa-spinner fa-spin"></i> Starting…';}
+    const checkinResult = await invoke('checkin');
+    sessionMeta.checkinTime = new Date();
+    setSession(true); startSW();
+    banner('✅ Checked in — tracking active','success',4000);
+    addFeedEvent('checkin','Check-in', new Date().toLocaleTimeString(),'Session started','pill-green');
+  }catch(err){
+    if(btn){btn.disabled=false;btn.innerHTML='<i class="fas fa-play"></i> Check in';}
+    banner('Check-in failed: '+err,'error');
+  }
+});
+
+$('endStopwatch')?.addEventListener('click',async()=>{
+  try{
+    await invoke('checkout');
+    setSession(false); stopSW();
+    banner('✅ Checked out — data saved','success',4000);
+    addFeedEvent('checkout','Check-out',new Date().toLocaleTimeString(),'Session ended','pill-red');
+  }catch(e){banner('Check-out failed: '+e,'error');}
+});
+
+/* ────────────────────────────────────────────
+   UPDATE SESSION PRODUCTIVITY CARD
+──────────────────────────────────────────── */
+function updateSessionCard(){
+  if(!sessionRunning||activeSec===0){ ST('sp-pct','—');return; }
+  const idleSec = sessionMeta.idleSec;
+  const totalSec = activeSec + idleSec;
+  const pct = totalSec>0 ? Math.round((activeSec/totalSec)*100) : 0;
+  ST('sp-pct', pct+'%');
+  const bar=$('sp-bar'); if(bar) bar.style.width=pct+'%';
+  ST('sp-active', FMTm(activeSec)+' active');
+  ST('sp-idle',   FMTm(idleSec)+' idle');
+  ST('sp-keys',   sessionMeta.keystrokes.toLocaleString());
+  ST('sp-clicks', sessionMeta.mouseClicks.toLocaleString());
+}
+
+/* ────────────────────────────────────────────
+   UPDATE DASHBOARD STATS
+──────────────────────────────────────────── */
+function updateDashStats(){
+  // Status tile
+  if(sessionRunning){
+    ST('ds-status-val','Active');
+    $('ds-status-val').style.color='var(--green-mid)';
+    ST('ds-status-since','Session in progress');
+  } else {
+    ST('ds-status-val','Idle');
+    $('ds-status-val').style.color='var(--text-muted)';
+    ST('ds-status-since','Not checked in');
+  }
+  // Active time
+  const h=Math.floor(activeSec/3600), m=Math.floor((activeSec%3600)/60);
+  ST('ds-active-val', activeSec>0?(h>0?`${h}h ${m}m`:`${m}m`):'0m');
+  // Active bar
+  const goalSec=8*3600;
+  const pct=Math.min(Math.round((activeSec/goalSec)*100),100);
+  ST('ds-active-pct',pct+'%');
+  const ab=$('ds-active-bar');if(ab)ab.style.width=pct+'%';
+  ST('ds-active-time', FMTm(activeSec)+' active');
+  ST('ds-idle-time', FMTm(sessionMeta.idleSec)+' idle');
+  ST('ds-idle-sub', FMTm(sessionMeta.idleSec)+' idle so far');
+  // Focus score
+  const totalSec=activeSec+sessionMeta.idleSec;
+  const score=totalSec>0?Math.round((activeSec/totalSec)*100):0;
+  ST('ds-score-val', activeSec>0?score+'%':'—');
+  ST('ds-score-sub','Based on activity ratio');
+  // Input stats
+  ST('ds-keys',   sessionMeta.keystrokes>0?sessionMeta.keystrokes.toLocaleString():'—');
+  ST('ds-mouse',  sessionMeta.mouseMoves>0?sessionMeta.mouseMoves.toLocaleString():'—');
+  ST('ds-clicks', sessionMeta.mouseClicks>0?sessionMeta.mouseClicks.toLocaleString():'—');
+  ST('ds-idle-sec', sessionMeta.idleSec>0?sessionMeta.idleSec+'s':'—');
+  // Session info
+  if(sessionMeta.checkinTime){
+    ST('ds-checkin', sessionMeta.checkinTime.toLocaleTimeString());
+    const dur=Math.floor((Date.now()-sessionMeta.checkinTime)/1000);
+    ST('ds-duration', FMTm(dur));
+    ST('ds-lastact', 'Just now');
+  }
+}
+
+/* ────────────────────────────────────────────
+   ACTIVITY FEED
+──────────────────────────────────────────── */
+const FEED_ICONS = {
+  checkin:  { icon:'fas fa-sign-in-alt',  bg:'#dff6dd', clr:'#107c10' },
+  checkout: { icon:'fas fa-sign-out-alt', bg:'#fde7e9', clr:'#c4314b' },
+  break:    { icon:'fas fa-coffee',       bg:'#fff4ce', clr:'#c67c00' },
+  resume:   { icon:'fas fa-play',         bg:'#deecf9', clr:'#0067b8' },
+  alert:    { icon:'fas fa-exclamation',  bg:'#fde7e9', clr:'#c4314b' },
+};
+let feedEvents=[];
+
+function addFeedEvent(type,title,time,detail,badgeClass){
+  feedEvents.unshift({type,title,time,detail,badgeClass});
+  renderFeed();
+}
+
+function renderFeed(){
+  if(!feedEvents.length)return;
+  ['activity-feed','sess-feed'].forEach(id=>{
+    const el=$(id); if(!el)return;
+    el.innerHTML=feedEvents.slice(0,8).map(ev=>{
+      const ic=FEED_ICONS[ev.type]||FEED_ICONS.alert;
+      return `<div class="feed-item">
+        <div class="feed-dot" style="background:${ic.bg};color:${ic.clr};"><i class="${ic.icon}" style="font-size:12px;"></i></div>
+        <div class="feed-body">
+          <div class="feed-title">${ev.title}</div>
+          <div class="feed-meta">${ev.time}${ev.detail?' · '+ev.detail:''}</div>
+        </div>
+      </div>`;
+    }).join('');
+  });
+}
+
+/* ────────────────────────────────────────────
+   INACTIVITY ALERTS (from user_inactivity table — polled via startup status)
+──────────────────────────────────────────── */
+function renderAlerts(alerts){
+  const list=$('alert-list');if(!list)return;
+  if(!alerts||!alerts.length){
+    list.innerHTML=`<div class="alert-item alert-item--ok"><span class="alert-icon" style="color:var(--green);">✓</span><div class="alert-body"><div class="alert-title">No alerts</div><div class="alert-msg">No long inactivity periods detected today</div></div></div>`;
+    return;
+  }
+  list.innerHTML=alerts.map(a=>
+    `<div class="alert-item alert-item--warn">
+      <span class="alert-icon" style="color:var(--amber);">⚠</span>
+      <div class="alert-body"><div class="alert-title">${a.title}</div><div class="alert-msg">${a.msg}</div></div>
+      <div class="alert-time">${a.time}</div>
+    </div>`).join('');
+}
+
+/* ────────────────────────────────────────────
+   TIMELINE BAR (built from session data)
+──────────────────────────────────────────── */
+function renderTimeline(segments){
+  const bar=$('tl-bar'); if(!bar)return;
+  if(!segments||!segments.length){
+    bar.innerHTML='<div class="tl-seg" style="flex:1;background:var(--border);" title="No session yet"></div>';
+    return;
+  }
+  bar.innerHTML=segments.map(s=>`
+    <div class="tl-seg" style="flex:${s.weight};background:${s.color};" title="${s.label}"></div>`).join('');
+}
+
+/* ────────────────────────────────────────────
+   TASKS
+──────────────────────────────────────────── */
+let tasks=[];
+function renderTasks(){
+  const list=$('task-list'),empty=$('task-empty');if(!list)return;
+  if(!tasks.length){list.innerHTML='';if(empty)empty.style.display='';return;}
+  if(empty)empty.style.display='none';
+  list.innerHTML=tasks.map(t=>`
+    <div class="task-item${t.done?' done':''}" data-id="${t.id}">
+      <div class="tcheck"></div>
+      <span class="ttxt">${t.text}</span>
+    </div>`).join('');
+  list.querySelectorAll('.task-item').forEach(el=>{
+    el.addEventListener('click',()=>{
+      const t=tasks.find(x=>x.id===Number(el.dataset.id));
+      if(t){t.done=!t.done;renderTasks();}
+    });
+  });
+}
+$('task-add-btn')?.addEventListener('click',()=>$('tinput-row')?.classList.toggle('show'));
+$('task-cancel')?.addEventListener('click',()=>$('tinput-row')?.classList.remove('show'));
+$('task-save')?.addEventListener('click',()=>{
+  const inp=$('task-input'),txt=inp?.value?.trim();if(!txt)return;
+  tasks.push({id:Date.now(),text:txt,done:false});inp.value='';
+  $('tinput-row')?.classList.remove('show');renderTasks();
+});
+$('task-input')?.addEventListener('keydown',e=>{if(e.key==='Enter')$('task-save')?.click();if(e.key==='Escape')$('task-cancel')?.click();});
+
+/* ────────────────────────────────────────────
+   BREAK TIMERS
+──────────────────────────────────────────── */
+let timers=[],tseq=1,ticks={};
+const FMT2=s=>[Math.floor(s/3600),Math.floor((s%3600)/60),s%60].map(v=>String(v).padStart(2,'0')).join(':');
+
+function renderTimers(){
+  const list=$('timer-list'),empty=$('timer-empty');if(!list)return;
+  if(!timers.length){list.innerHTML='';if(empty)empty.style.display='';return;}
+  if(empty)empty.style.display='none';
+  list.innerHTML=timers.map(t=>`
+    <div class="tcard" data-id="${t.id}">
+      <div class="tcard-info"><div class="tcard-name">${t.name}</div><div class="tcard-time">${FMT2(t.rem)}</div></div>
+      <div class="tcard-ctrls">
+        <button class="ib ib--p" data-a="tog"><i class="fas fa-${t.running?'pause':'play'}"></i></button>
+        <button class="ib" data-a="rst"><i class="fas fa-undo"></i></button>
+        <button class="ib ib--del" data-a="del"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>`).join('');
+  list.querySelectorAll('.tcard').forEach(card=>{
+    const id=Number(card.dataset.id);
+    card.querySelectorAll('[data-a]').forEach(btn=>{
+      btn.addEventListener('click',()=>{
+        if(btn.dataset.a==='tog') togTimer(id);
+        if(btn.dataset.a==='rst') rstTimer(id);
+        if(btn.dataset.a==='del') delTimer(id);
+      });
+    });
+  });
+}
+
+function stepField(f,d){
+  const el=$(f);if(!el)return;
+  const max=f==='t-h'?23:59;
+  el.value=String(((parseInt(el.value)||0)+d+max+1)%(max+1)).padStart(2,'0');
+}
+document.querySelectorAll('[data-f][data-s]').forEach(btn=>btn.addEventListener('click',()=>stepField(btn.dataset.f,Number(btn.dataset.s))));
+
+$('add-timer-btn')?.addEventListener('click',()=>{
+  const h=parseInt($('t-h')?.value)||0,m=parseInt($('t-m')?.value)||0,s=parseInt($('t-s')?.value)||0;
+  const tot=h*3600+m*60+s;if(tot<=0){banner('Set a duration first','warn');return;}
+  const name=$('t-name')?.value?.trim()||`Timer ${tseq}`;
+  timers.push({id:Date.now(),name,tot,rem:tot,running:false});tseq++;
+  if($('t-name'))$('t-name').value='';renderTimers();
+});
+
+function togTimer(id){
+  const t=timers.find(x=>x.id===id);if(!t)return;
+  t.running=!t.running;
+  if(t.running){
+    ticks[id]=setInterval(()=>{
+      t.rem=Math.max(0,t.rem-1);
+      if(t.rem===0){clearInterval(ticks[id]);delete ticks[id];t.running=false;banner(`⏰ "${t.name}" finished!`,'info',6000);}
+      renderTimers();
+    },1000);
+    addFeedEvent('break','Break started',new Date().toLocaleTimeString(),t.name,'pill-amber');
+  }else{
+    clearInterval(ticks[id]);delete ticks[id];
+    addFeedEvent('resume','Break ended',new Date().toLocaleTimeString(),t.name,'pill-blue');
+  }
+  renderTimers();
+}
+function rstTimer(id){const t=timers.find(x=>x.id===id);if(!t)return;clearInterval(ticks[id]);delete ticks[id];t.running=false;t.rem=t.tot;renderTimers();}
+function delTimer(id){clearInterval(ticks[id]);delete ticks[id];timers=timers.filter(x=>x.id!==id);renderTimers();}
+
+/* ────────────────────────────────────────────
+   CALL CONTROLS
+──────────────────────────────────────────── */
+function togCall(id,on,off){const btn=$(id);if(!btn)return;const m=btn.classList.toggle('muted');const i=btn.querySelector('i');if(i)i.className=`fas ${m?off:on}`;}
+$('btn-call-video')?.addEventListener('click',()=>togCall('btn-call-video','fa-video','fa-video-slash'));
+$('btn-call-audio')?.addEventListener('click',()=>togCall('btn-call-audio','fa-microphone','fa-microphone-slash'));
+$('btn-call-end')?.addEventListener('click',()=>{
+  if(!confirm('End the call?'))return;
+  ['btn-call-video','btn-call-audio'].forEach(id=>{const btn=$(id);if(!btn)return;btn.classList.remove('muted');const i=btn.querySelector('i');if(i)i.className=`fas ${id==='btn-call-video'?'fa-video':'fa-microphone'}`;});
+});
+
+/* ────────────────────────────────────────────
+   APP / URL TRACKING
+   Data source: active_window table → process_name, duration_sec
+   Until real Tauri command: realistic simulated data that mirrors DB shape
+──────────────────────────────────────────── */
+const PRODUCTIVE_APPS = ['code.exe','cursor.exe','rider.exe','webstorm.exe','intellij.exe','terminal.exe','bash','zsh','figma.exe','postman.exe'];
+const NEUTRAL_APPS    = ['slack.exe','teams.exe','zoom.exe','discord.exe','outlook.exe'];
+const WORK_URLS       = ['github.com','gitlab.com','stackoverflow.com','docs.rs','npmjs.com','developer.mozilla.org','figma.com','notion.so','linear.app','jira'];
+
+function classify(name){
+  const n=name.toLowerCase();
+  if(PRODUCTIVE_APPS.some(a=>n.includes(a.replace('.exe','')))) return 'productive';
+  if(NEUTRAL_APPS.some(a=>n.includes(a.replace('.exe','')))) return 'neutral';
+  if(n.includes('chrome')||n.includes('firefox')||n.includes('safari')||n.includes('edge')) return 'browser';
+  return 'neutral';
+}
+
+function renderApps(){
+  const tbody=$('app-tbody');if(!tbody)return;
+  // Simulated data matching active_window schema: process_name, duration_sec
+  const apps=[
+    {process:'Code.exe',       display:'Visual Studio Code',dur:8040, pct:67},
+    {process:'chrome.exe',     display:'Google Chrome',     dur:3720, pct:31},
+    {process:'slack.exe',      display:'Slack',             dur:1680, pct:14},
+    {process:'Teams.exe',      display:'Microsoft Teams',   dur:900,  pct:8 },
+    {process:'OUTLOOK.EXE',    display:'Outlook',           dur:540,  pct:5 },
+    {process:'YouTube',        display:'YouTube (browser)', dur:420,  pct:3 },
+  ];
+  tbody.innerHTML=apps.map((a,i)=>{
+    const cls=classify(a.process);
+    const tagClass=cls==='productive'?'tag-prod':cls==='neutral'?'tag-neutral':'tag-nonwork';
+    const tagLabel=cls==='productive'?'Productive':cls==='neutral'?'Neutral':'Non-work';
+    const barColor=cls==='productive'?'var(--green-mid)':cls==='neutral'?'var(--amber)':'var(--red)';
+    return `<tr>
+      <td><span class="app-ico"><i class="fas fa-window-restore" style="font-size:9px;"></i></span>${a.display}</td>
+      <td>${FMTm(a.dur)}</td>
+      <td><div class="bar-c"><div class="bar-m"><div class="bar-f" style="width:${a.pct}%;background:${barColor};"></div></div><span style="font-size:11px;color:var(--text-muted);">${a.pct}%</span></div></td>
+      <td><span class="tag ${tagClass}">${tagLabel}</span></td>
+    </tr>`;
+  }).join('');
+
+  // Productivity classification bars
+  const total=apps.reduce((s,a)=>s+a.dur,0);
+  const prodDur=apps.filter(a=>classify(a.process)==='productive').reduce((s,a)=>s+a.dur,0);
+  const neuDur=apps.filter(a=>classify(a.process)==='neutral').reduce((s,a)=>s+a.dur,0);
+  const unprodDur=total-prodDur-neuDur;
+  const pp=Math.round(prodDur/total*100),np=Math.round(neuDur/total*100),up=100-pp-np;
+  ST('pc-prod-pct',pp+'%'); const pb=$('pc-prod-bar');if(pb)pb.style.width=pp+'%';
+  ST('pc-neu-pct',np+'%');  const nb=$('pc-neu-bar');if(nb)nb.style.width=np+'%';
+  ST('pc-unprod-pct',up+'%');const ub=$('pc-unprod-bar');if(ub)ub.style.width=up+'%';
+
+  // Top tools
+  const ttl=$('top-tools-list');if(ttl){
+    const sorted=[...apps].sort((a,b)=>b.dur-a.dur).slice(0,4);
+    ttl.innerHTML=sorted.map((a,i)=>{
+      const medals=['🥇','🥈','🥉','4️⃣'];
+      return `<div class="grow" style="padding:8px 0;">
+        <span style="display:flex;align-items:center;gap:8px;">
+          <span style="font-size:14px;">${medals[i]}</span>
+          <span style="font-size:13px;color:var(--text);">${a.display}</span>
+        </span>
+        <strong style="font-size:13px;">${FMTm(a.dur)}</strong>
+      </div>`;
+    }).join('');
+  }
+
+  // Dashboard top apps
+  const dtl=$('dash-top-apps');if(dtl){
+    dtl.innerHTML=apps.slice(0,3).map(a=>`
+      <div class="grow" style="padding:6px 0;">
+        <span style="font-size:13px;color:var(--text);">${a.display}</span>
+        <strong style="font-size:13px;">${FMTm(a.dur)}</strong>
+      </div>`).join('');
+  }
+}
+
+function renderUrls(){
+  const tbody=$('url-tbody');if(!tbody)return;
+  const urls=[
+    {url:'github.com',          dur:2880,v:18,work:true },
+    {url:'stackoverflow.com',   dur:1320,v:9, work:true },
+    {url:'docs.rs',             dur:1080,v:6, work:true },
+    {url:'notion.so',           dur:720, v:5, work:true },
+    {url:'youtube.com',         dur:660, v:4, work:false},
+    {url:'twitter.com',         dur:360, v:6, work:false},
+  ];
+  tbody.innerHTML=urls.map(u=>`<tr>
+    <td><i class="fas fa-globe" style="color:var(--text-muted);margin-right:8px;font-size:11px;"></i>${u.url}</td>
+    <td>${FMTm(u.dur)}</td>
+    <td>${u.v}</td>
+    <td><span class="tag ${u.work?'tag-work':'tag-nonwork'}">${u.work?'Work':'Non-work'}</span></td>
+  </tr>`).join('');
+}
+
+/* ────────────────────────────────────────────
+   USER INFO
+──────────────────────────────────────────── */
+function loadUser(){
+  const first=sessionStorage.getItem('firstName')||'R';
+  const last=sessionStorage.getItem('lastName')||'M';
+  const email=sessionStorage.getItem('userEmail')||'';
+  const ini=((first[0]||'')+(last[0]||'')).toUpperCase();
+  ['tb-av','pop-av','nav-av'].forEach(id=>ST(id,ini));
+  ST('pop-name',`${first} ${last}`.trim());
+  ST('nav-name',`${first} ${last}`.trim());
+  ST('pop-email',email);
+  ST('s-email',email);
+}
+
+/* ────────────────────────────────────────────
+   STARTUP — check for active session, load inactivity alerts
+──────────────────────────────────────────── */
+async function startup(){
+  try{
+    const st = await invoke('get_startup_status');
+    if(!st) return;
+
+    if(st.has_active_session){
+      sessionMeta.checkinTime = st.checkin_time ? new Date(st.checkin_time) : new Date();
+      setSession(true); startSW();
+      addFeedEvent('checkin','Check-in resumed',sessionMeta.checkinTime.toLocaleTimeString(),'Session active','pill-green');
+
+      if(st.offline_minutes > 5){
+        banner(`⚠️ ${st.offline_minutes} min offline — marked as break`,'warn',6000);
+        // Add alert for the offline period
+        renderAlerts([{
+          title:`System was offline for ${st.offline_minutes} minutes`,
+          msg:'This period has been marked as a break automatically',
+          time:'Today'
+        }]);
+        addFeedEvent('alert','Offline detected',new Date().toLocaleTimeString(),`${st.offline_minutes} min offline`,'pill-amber');
+      } else {
+        banner('Session resumed','success',3000);
+      }
+
+      try{ await invoke('resume_tracking'); }catch{}
+    }
+
+    // Build a simple timeline from what we know
+    // In production this would come from user_activity_minute + user_breaks
+    if(st.has_active_session){
+      renderTimeline([
+        {weight:70, color:'var(--accent)', label:'Active (70%)'},
+        {weight:15, color:'#f0c060', label:'Idle (15%)'},
+        {weight:15, color:'var(--blue-dim)', label:'Break (15%)'},
+      ]);
+    }
+
+  }catch(e){ console.warn('[startup]',e); }
+}
+
+/* ────────────────────────────────────────────
+   INIT
+──────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded',()=>{
+  loadUser();
+  renderTasks();
+  renderTimers();
+  renderApps();
+  renderUrls();
+  updateDashStats();
+  startup();
+});
+</script>
+<script defer src="js/header.js"></script>
+</body>
+</html>

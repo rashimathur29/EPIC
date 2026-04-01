@@ -1,0 +1,251 @@
+/* =============================================================
+   css/auth.css
+   Shared styles for login.html and find_your_organization.html.
+   Pixel-matched to Microsoft Teams sign-in dialog.
+   ============================================================= */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+    height: 100%;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    font-size: 14px;
+    color: #323130;
+    background: #ffffff;
+    -webkit-font-smoothing: antialiased;
+    overflow: hidden;
+}
+
+/* ── Full height column ── */
+.page-wrap {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* ── Content area — matches Teams left-padding ── */
+.page-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 32px 40px 0;
+    overflow-y: auto;
+}
+
+/* ── Logo row ── */
+.logo-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.logo-img {
+    height: 32px;
+    display: flex;
+    align-items: center;
+}
+
+.logo-img img {
+    height: 100%;
+    width: auto;
+    object-fit: contain;
+}
+
+.logo-name {
+    font-size: 18px;
+    font-weight: 600;
+    color: #323130;
+}
+
+/* ── Page heading ── */
+.auth-heading {
+    font-size: 24px;
+    font-weight: 600;
+    color: #323130;
+    margin-bottom: 20px;
+    line-height: 1.2;
+}
+
+/* ── Description text ── */
+.auth-desc {
+    font-size: 13.5px;
+    color: #605e5c;
+    line-height: 1.5;
+    margin-bottom: 24px;
+}
+
+/* ── Field label ── */
+.field-label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #605e5c;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
+}
+
+/* ── Input — underline only, Teams-exact ── */
+.input-wrap {
+    position: relative;
+    margin-bottom: 4px;
+}
+
+.input-wrap input {
+    width: 100%;
+    padding: 10px 36px 8px 0;
+    font-size: 14px;
+    font-family: inherit;
+    color: #323130;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid #8a8886;
+    outline: none;
+    transition: border-bottom-width 0.1s, border-color 0.12s;
+}
+
+.input-wrap input::placeholder { color: #8a8886; }
+
+.input-wrap input:focus {
+    border-bottom: 2px solid #0067b8;
+}
+
+/* Password show/hide toggle */
+.pwd-toggle {
+    position: absolute;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    background: none;
+    border: none;
+    color: #605e5c;
+    font-size: 15px;
+    cursor: pointer;
+    padding: 4px;
+    display: flex;
+    align-items: center;
+    line-height: 1;
+}
+
+.pwd-toggle:hover { color: #323130; }
+
+/* ── Feedback / error ── */
+.feedback {
+    font-size: 12px;
+    color: #a80000;
+    margin-top: 6px;
+    min-height: 16px;
+    line-height: 1.4;
+}
+
+/* ── Helper / secondary links ── */
+.helper-text {
+    margin-top: 14px;
+    font-size: 13px;
+    color: #323130;
+}
+
+.auth-link {
+    color: #0067b8;
+    text-decoration: none;
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+
+.auth-link:hover { text-decoration: underline; }
+
+/* Forgot password */
+.forgot-link {
+    display: inline-block;
+    margin-top: 12px;
+    font-size: 13px;
+    color: #0067b8;
+    text-decoration: none;
+    background: none;
+    border: none;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 0;
+}
+
+.forgot-link:hover { text-decoration: underline; }
+
+/* ── Step 2 — email display with change button ── */
+.step2-email {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #323130;
+    margin-bottom: 18px;
+}
+
+.step2-email .auth-link { font-weight: 400; font-size: 12px; }
+
+/* ── Info hint box — Teams grey style ── */
+.info-hint {
+    background: #f5f5f5;
+    border-left: 3px solid #0067b8;
+    border-radius: 0 2px 2px 0;
+    padding: 10px 14px;
+    margin-top: 20px;
+    font-size: 13px;
+    color: #323130;
+    line-height: 1.5;
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.info-hint i {
+    margin-top: 2px;
+    flex-shrink: 0;
+    color: #0067b8;
+    font-size: 13px;
+}
+
+/* ── Next / Sign in button — Teams blue ── */
+.btn-row {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 28px;
+}
+
+.btn-primary-auth {
+    padding: 9px 24px;
+    font-size: 14px;
+    font-weight: 400;
+    background: #0067b8;
+    color: #fff;
+    border: none;
+    border-radius: 2px;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.12s;
+    min-width: 108px;
+    text-align: center;
+}
+
+.btn-primary-auth:hover:not(:disabled)  { background: #005a9e; }
+.btn-primary-auth:active                { background: #004f8c; }
+.btn-primary-auth:disabled              { background: #c8c6c4; cursor: not-allowed; }
+
+/* ── Footer ── */
+.page-footer {
+    padding: 16px 40px 20px;
+    font-size: 12px;
+    color: #8a8886;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    flex-shrink: 0;
+}
+
+.page-footer a { color: #8a8886; text-decoration: none; }
+.page-footer a:hover { text-decoration: underline; }

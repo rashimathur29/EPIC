@@ -1,0 +1,88 @@
+[package]
+name = "EPIC"
+version = "0.1.0"
+description = "Employee Productivity & Insight Console"
+authors = ["Rashi Mathur"]
+license = ""
+repository = ""
+edition = "2021"
+
+[lib]
+name = "epic_tauri_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-opener = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.26.3", features = ["bundled"] }
+keyring = "2.0"
+rand = { version = "0.8", features = ["std"] }
+user-idle = "0.6.0"  
+cpal = "0.15"
+openh264 = "0.9.3"   
+tungstenite = "0.21"
+muxide = "0.2.0"
+
+# System monitoring and core utilities
+tokio = { version = "1", features = ["full"] }
+chrono = { version = "0.4", features = ["serde"] }
+chrono-tz = "0.10"
+evtx = "0.8"
+reqwest = { version = "0.11", features = ["json", "multipart"] }
+dotenv = "0.15"
+
+# Cryptography and utilities
+aes-gcm = "0.10"
+base64 = "0.21"
+sha2 = "0.10"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+
+# Logging and error handling
+log = "0.4"
+log4rs = { version = "1.2", features = ["console_appender", "file_appender", "rolling_file_appender"] }
+anyhow = "1.0"
+thiserror = "1.0"
+
+# Async and concurrency
+futures = "0.3"
+parking_lot = "0.12"
+crossbeam-channel = "0.5"
+
+# System monitoring
+sysinfo = "0.30"
+screenshots = "0.6"
+hostname = "0.3"
+image = "0.24"
+once_cell = "1.19"
+
+# Input monitoring (Windows-specific)
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.51", features = [
+    "Win32_Foundation",
+    "Win32_System_Threading",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_WindowsProgramming",
+    "Win32_System_Power",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_System_ProcessStatus",
+] }
+winapi = { version = "0.3", features = ["winuser", "psapi", "processthreadsapi"] }
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "z"
+strip = true

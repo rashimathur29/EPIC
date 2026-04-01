@@ -1,0 +1,52 @@
+<!-- TITLE BAR -->
+<header class="tb">
+    <div class="tb__left">
+        <button class="mob-menu" id="mob-menu-btn" aria-label="Menu"><i class="fas fa-bars"></i></button>
+        <div class="tb__icon">
+            <img src="images/tab.png" alt="EPIC" onerror="this.style.display='none';this.nextElementSibling.style.display='block'">
+            
+        </div>
+        <button class="tb__nav" onclick="history.back()"><i class="fas fa-chevron-left"></i></button>
+        <button class="tb__nav" onclick="history.forward()"><i class="fas fa-chevron-right"></i></button>
+    </div>
+    <div class="tb__search">
+        <div class="tb__search-inner">
+            <i class="fas fa-search"></i>
+            <input type="search" placeholder="Search (Ctrl+E)" autocomplete="off" spellcheck="false">
+        </div>
+    </div>
+    <div class="tb__right">
+        <button class="tb__ibtn"><i class="fas fa-ellipsis-h"></i></button>
+        <button class="tb__avatar-btn" id="btn-profile">
+            <div class="tb__avatar-ring" id="tb-avatar">RM</div>
+        </button>
+        <button class="tb__wc" id="btn-minimize"><i class="far fa-window-minimize"></i></button>
+        <button class="tb__wc" id="btn-maximize"><i class="far fa-window-maximize"></i></button>
+        <button class="tb__wc tb__wc--close" id="btn-close"><i class="fas fa-times"></i></button>
+    </div>
+</header>
+
+<!-- PROFILE POPOVER -->
+<div class="popover" id="popover">
+    <div class="pop-head">
+        <div class="pop-av" id="pop-av">RM</div>
+        <div>
+            <div class="pop-name" id="pop-name">Rashi Mathur</div>
+            <div class="pop-email" id="pop-email"><a href="/cdn-cgi/l/email-protection" class="__cf_email__" data-cfemail="7c0e1d0f14153c1f13110c1d1205521f1311">[email&#160;protected]</a></div>
+        </div>
+    </div>
+    <div style="padding:6px 0;">
+        <button class="pop-item" id="pop-analytics"><i class="fas fa-chart-line"></i>Send Analytics</button>
+        <button class="pop-item" id="pop-refresh"><i class="fas fa-sync-alt"></i>Refresh Data</button>
+        <button class="pop-item" id="pop-logs"><i class="fas fa-file-export"></i>Send Logs</button>
+        <div class="pop-div"></div>
+        <button class="pop-item" id="pop-about"><i class="fas fa-info-circle"></i>About EPIC</button>
+        <div class="pop-div"></div>
+        <button class="pop-item pop-item--danger" id="pop-signout-org"><i class="fas fa-building"></i>Sign out of Org</button>
+        <button class="pop-item pop-item--danger" id="pop-signout"><i class="fas fa-sign-out-alt"></i>Sign out</button>
+    </div>
+    <div class="pop-foot"><span>v1.0.0</span><a href="#">Privacy</a></div>
+</div>
+
+<!-- NAV OVERLAY (mobile) -->
+<div class="nav-overlay" id="nav-overlay"></div>

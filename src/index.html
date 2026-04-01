@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPIC — Employee Productivity &amp; Insight Console</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/epic.css">
+</head>
+<body>
+
+<!-- HEADER (populated by epic.js) -->
+<div id="header"></div>
+
+<!-- APP SHELL -->
+<div class="app">
+
+    <!-- SIDENAV (populated by epic.js) -->
+    <nav class="sidenav" id="sidenav"></nav>
+
+    <!-- MAIN -->
+    <div class="main">
+        <div class="page-bar">
+            <i class="fas fa-clock page-bar__icon" id="pb-icon"></i>
+            <span class="page-bar__title" id="pb-title">Productivity Session</span>
+        </div>
+        <div class="page-scroll">
+            <div class="page active" id="page-productivity"></div>
+            <div class="page"        id="page-breaks"></div>
+            <div class="page"        id="page-apps"></div>
+            <div class="page"        id="page-calls"></div>
+            <div class="page"        id="page-settings"></div>
+        </div>
+    </div>
+</div>
+
+<!--
+  NO loadComponent() here.
+  epic.js owns ALL component loading via Promise.allSettled so it
+  can wire every event listener AFTER the DOM is fully populated.
+-->
+<script src="js/epic.js"></script>
+</body>
+</html>

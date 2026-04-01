@@ -1,0 +1,207 @@
+/* =============================================================
+   css/header.css
+   Styles scoped exclusively to the title bar (.titlebar).
+   No layout, no page, no component styles here.
+
+   Title bar layout (Teams-exact):
+   [icon][< >] [────── Search ──────] [···][Avatar●][─][□][×]
+   ============================================================= */
+
+/* ── Root element ─────────────────────────────────────────── */
+.titlebar {
+    height: var(--titlebar-h);
+    background: var(--clr-surface);
+    border-bottom: 1px solid var(--clr-border);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    position: relative;
+    z-index: var(--z-titlebar);
+
+    /* Tauri drag region on the bar itself */
+    -webkit-app-region: drag;
+    user-select: none;
+}
+
+/* ── Left: app icon + back/forward ───────────────────────── */
+.titlebar__left {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 0 8px 0 10px;
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+}
+
+.titlebar__app-icon {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 6px;
+    flex-shrink: 0;
+}
+
+.titlebar__app-icon img {
+    width: 22px;
+    height: 22px;
+    object-fit: contain;
+    display: block;
+}
+
+/* Shown only when the image fails to load */
+.titlebar__app-icon .icon-fallback {
+    display: none;
+    font-size: 18px;
+    color: var(--clr-accent);
+}
+
+.titlebar__nav-btn {
+    width: 28px;
+    height: 28px;
+    border: none;
+    background: transparent;
+    color: var(--clr-text-sub);
+    font-size: 11px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: var(--r-sm);
+    transition: background 0.12s ease;
+    -webkit-app-region: no-drag;
+}
+
+.titlebar__nav-btn:hover:not(:disabled) { background: var(--clr-hover); }
+.titlebar__nav-btn:disabled             { opacity: 0.35; cursor: default; }
+
+/* ── Centre: search bar ───────────────────────────────────── */
+.titlebar__search {
+    flex: 1;
+    max-width: 520px;
+    margin: 0 auto;
+    -webkit-app-region: no-drag;
+}
+
+.titlebar__search-inner { position: relative; }
+
+.titlebar__search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--clr-text-subtle);
+    font-size: 12px;
+    pointer-events: none;
+}
+
+.titlebar__search-input {
+    width: 100%;
+    height: 30px;
+    padding: 0 14px 0 32px;
+    border: 1px solid var(--clr-border);
+    border-radius: var(--r-pill);
+    font-family: var(--font);
+    font-size: var(--fz-sm);
+    color: var(--clr-text);
+    background: var(--clr-bg);
+    transition: border-color 0.15s ease,
+                background   0.15s ease,
+                border-radius 0.15s ease;
+}
+
+.titlebar__search-input::placeholder { color: var(--clr-text-subtle); }
+
+.titlebar__search-input:focus {
+    outline: none;
+    border-color: var(--clr-accent);
+    background: var(--clr-surface);
+    border-radius: var(--r-sm);
+}
+
+/* ── Right: misc + avatar + window controls ───────────────── */
+.titlebar__right {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    -webkit-app-region: no-drag;
+}
+
+/* Misc icon button (···) */
+.titlebar__icon-btn {
+    width: 40px;
+    height: var(--titlebar-h);
+    border: none;
+    background: transparent;
+    color: var(--clr-text-sub);
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s ease;
+}
+
+.titlebar__icon-btn:hover { background: var(--clr-hover); }
+
+/* ── Avatar button — Teams position (top-right) ───────────── */
+.titlebar__avatar-btn {
+    width: 40px;
+    height: var(--titlebar-h);
+    border: none;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    margin-right: 4px;
+}
+
+.titlebar__avatar-btn:hover .titlebar__avatar-ring {
+    box-shadow: 0 0 0 2px var(--clr-accent);
+}
+
+.titlebar__avatar-ring {
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    background: var(--clr-accent);
+    color: #fff;
+    font-size: var(--fz-xs);
+    font-weight: var(--fw-bold);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    transition: box-shadow 0.15s ease;
+    user-select: none;
+}
+
+/* Presence dot */
+.titlebar__avatar-ring::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    width: 9px;
+    height: 9px;
+    background: var(--clr-presence);
+    border: 2px solid var(--clr-surface);
+    border-radius: 50%;
+}
+
+/* ── Window control buttons ───────────────────────────────── */
+.titlebar__wc-btn {
+    width: 46px;
+    height: var(--titlebar-h);
+    border: none;
+    background: transparent;
+    color: var(--clr-text-sub);
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.12s ease, color 0.12s ease;
+}
+
+.titlebar__wc-btn:hover           { background: var(--clr-hover); }
+.titlebar__wc-btn--close:hover    { background: var(--clr-danger); color: #fff; }

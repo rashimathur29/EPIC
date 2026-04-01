@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EPIC - Tauri v2</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: linear-gradient(135deg, #0f0c29 0%, #302b63 100%);
+            color: white;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        /* Minimal Title Bar */
+        .titlebar {
+            height: 32px;
+            background: rgba(0, 0, 0, 0.3);
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            padding: 0 10px;
+        }
+        .window-btn {
+            width: 32px;
+            height: 32px;
+            border: none;
+            background: transparent;
+            color: white;
+            cursor: pointer;
+            font-size: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.2s;
+        }
+        .window-btn:hover {
+            background: rgba(255, 255, 255, 0.1);
+        }
+        
+        /* Main Content */
+        .container {
+            padding: 40px;
+            height: calc(100vh - 32px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            text-align: center;
+        }
+        h1 {
+            font-size: 4em;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #00dbde, #fc00ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        /* Control Panel */
+        .control-panel {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 15px;
+            padding: 30px;
+            margin: 20px;
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            max-width: 500px;
+            width: 90%;
+        }
+        
+        .status-box {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 15px;
+            border-radius: 10px;
+            margin: 20px 0;
+            font-family: monospace;
+            font-size: 14px;
+        }
+        
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 20px 0;
+        }
+        
+        .action-btn {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            transition: all 0.3s;
+        }
+        
+        .action-btn:hover {
+            transform: translateY(-2px);
+        }
+        
+        .success { color: #4CAF50; }
+        .error { color: #f44336; }
+        .warning { color: #ff9800; }
+    </style>
+</head>
+<body>
+    <!-- Simple Title Bar -->
+    <div class="titlebar">
+        <button class="window-btn" onclick="minimizeWindow()">−</button>
+        <button class="window-btn" onclick="maximizeWindow()">□</button>
+        <button class="window-btn" onclick="closeWindow()" style="margin-left: 5px;">×</button>
+    </div>
+
+    <!-- Main Content -->
+    <div class="container">
+        <h1>EPIC</h1>
+        <p style="color: #a0a0d0; margin-bottom: 30px;">Tauri v2 Desktop Application</p>
+        
+        <div class="control-panel">
+            <div class="status-box">
+                <div id="statusText" class="warning">🔍 Detecting Tauri API...</div>
+                <div id="debugInfo" style="margin-top: 10px; font-size: 12px; color: #888;"></div>
+            </div>
+            
+            <div class="button-grid">
+                <button class="action-btn" onclick="minimizeWindow()">Minimize</button>
+                <button class="action-btn" onclick="maximizeWindow()">Maximize</button>
+                <button class="action-btn" onclick="closeWindow()">Close</button>
+                <button class="action-btn" onclick="showMessage()">Message</button>
+                <button class="action-btn" onclick="exploreTauri()">Explore API</button>
+                <button class="action-btn" onclick="testAll()">Test All</button>
+            </div>
+            
+            <div style="margin-top: 20px; color: #666; font-size: 12px;">
+                <div id="permissionStatus">Checking permissions...</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Simple Tauri API Manager
+        class TauriManager {
+            constructor() {
+                this.window = null;
+                this.init();
+            }
+            
+            async init() {
+                this.updateStatus('Checking Tauri environment...');
+                
+                if (!window.__TAURI__) {
+                    this.updateStatus('❌ Tauri not available', 'error');
+                    return;
+                }
+                
+                this.updateStatus('✅ Tauri detected');
+                this.exploreApi();
+                
+                // Get window based on what we discovered earlier
+                await this.getWindow();
+            }
+            
+            exploreApi() {
+                const debug = document.getElementById('debugInfo');
+                const tauri = window.__TAURI__;
+                
+                let info = 'Available APIs: ';
+                const keys = Object.keys(tauri);
+                debug.innerHTML = 'Keys: ' + keys.join(', ') + '<br>';
+                
+                // Check window API
+                if (tauri.window) {
+                    debug.innerHTML += 'Window methods: ' + Object.keys(tauri.window).join(', ') + '<br>';
+                    
+                    // Check if getCurrentWindow exists
+                    if (typeof tauri.window.getCurrentWindow === 'function') {
+                        debug.innerHTML += '✅ window.getCurrentWindow is a function<br>';
+                    }
+                }
+                
+                if (tauri.webviewWindow) {
+                    debug.innerHTML += 'webviewWindow methods: ' + Object.keys(tauri.webviewWindow).join(', ') + '<br>';
+                }
+            }
+            
+            async getWindow() {
+                try {
+                    // From our earlier discovery, use window.getCurrentWindow()
+                    if (window.__TAURI__?.window?.getCurrentWindow) {
+                        this.window = window.__TAURI__.window.getCurrentWindow();
+                        this.updateStatus('✅ Got window via window.getCurrentWindow()');
+                        
+                        // Log window methods
+                        console.log('Window methods:', Object.keys(this.window));
+                        this.showMethodInfo();
+                        
+                        return;
+                    }
+                    
+                    // Alternative: try WebviewWindow class
+                    if (window.__TAURI__?.webviewWindow?.WebviewWindow) {
+                        // Try to get window by label
+                        this.window = window.__TAURI__.webviewWindow.WebviewWindow.getByLabel('main');
+                        this.updateStatus('✅ Got window via WebviewWindow.getByLabel');
+                        return;
+                    }
+                    
+                    this.updateStatus('❌ Cannot get window instance', 'error');
+                    
+                } catch (error) {
+                    this.updateStatus('❌ Failed to get window: ' + error.message, 'error');
+                }
+            }
+            
+            showMethodInfo() {
+                if (!this.window) return;
+                
+                const methods = [];
+                for (const key in this.window) {
+                    if (typeof this.window[key] === 'function') {
+                        methods.push(key);
+                    }
+                }
+                
+                const debug = document.getElementById('debugInfo');
+                debug.innerHTML += 'Window methods: ' + methods.join(', ') + '<br>';
+                
+                // Update permission status
+                const permEl = document.getElementById('permissionStatus');
+                if (permEl) {
+                    permEl.innerHTML = `
+                        Available methods:<br>
+                        ${methods.map(m => `• ${m}()`).join('<br>')}
+                    `;
+                }
+            }
+            
+            async minimizeWindow() {
+                try {
+                    if (!this.window) await this.getWindow();
+                    if (!this.window) throw new Error('No window instance');
+                    
+                    await this.window.minimize();
+                    this.showToast('✅ Window minimized');
+                } catch (error) {
+                    this.showToast('❌ Minimize failed: ' + error.message, 'error');
+                }
+            }
+            
+            async maximizeWindow() {
+                try {
+                    if (!this.window) await this.getWindow();
+                    if (!this.window) throw new Error('No window instance');
+                    
+                    // First check if maximize method exists
+                    if (typeof this.window.maximize !== 'function') {
+                        throw new Error('maximize() method not available');
+                    }
+                    
+                    const isMaximized = await this.window.isMaximized();
+                    if (isMaximized) {
+                        await this.window.unmaximize();
+                        this.showToast('✅ Window restored');
+                    } else {
+                        await this.window.maximize();
+                        this.showToast('✅ Window maximized');
+                    }
+                } catch (error) {
+                    if (error.message.includes('not allowed') || error.message.includes('permission')) {
+                        this.showToast(
+                            '❌ Maximize blocked by permissions\n\n' +
+                            'Update tauri.conf.json with:\n\n' +
+                            '"plugins": {\n' +
+                            '  "window": {\n' +
+                            '    "state": {\n' +
+                            '      "maximize": true\n' +
+                            '    }\n' +
+                            '  }\n' +
+                            '}',
+                            'error'
+                        );
+                    } else {
+                        this.showToast('❌ Maximize failed: ' + error.message, 'error');
+                    }
+                }
+            }
+            
+            async closeWindow() {
+                try {
+                    if (!this.window) await this.getWindow();
+                    if (!this.window) throw new Error('No window instance');
+                    
+                    if (confirm('Close EPIC?')) {
+                        await this.window.close();
+                    }
+                } catch (error) {
+                    if (error.message.includes('not allowed') || error.message.includes('permission')) {
+                        this.showToast(
+                            '❌ Close blocked by permissions\n' +
+                            'Update window plugin config',
+                            'error'
+                        );
+                    } else {
+                        this.showToast('❌ Close failed: ' + error.message, 'error');
+                    }
+                }
+            }
+            
+            async showMessage() {
+                try {
+                    if (window.__TAURI__?.dialog?.message) {
+                        await window.__TAURI__.dialog.message('EPIC Desktop App', {
+                            title: 'Hello!',
+                            type: 'info'
+                        });
+                    } else {
+                        alert('Welcome to EPIC!\n\nTauri v2 Desktop Application');
+                    }
+                } catch (error) {
+                    alert('Welcome to EPIC!');
+                }
+            }
+            
+            updateStatus(message, type = 'info') {
+                const statusEl = document.getElementById('statusText');
+                if (statusEl) {
+                    statusEl.innerHTML = `<span class="${type}">${message}</span>`;
+                }
+            }
+            
+            showToast(message, type = 'success') {
+                const toast = document.createElement('div');
+                toast.textContent = message;
+                toast.style.cssText = `
+                    position: fixed;
+                    bottom: 20px;
+                    right: 20px;
+                    background: ${type === 'error' ? '#f44336' : '#4CAF50'};
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    z-index: 1000;
+                    font-weight: 500;
+                    max-width: 400px;
+                    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+                    white-space: pre-line;
+                `;
+                
+                document.body.appendChild(toast);
+                setTimeout(() => {
+                    if (document.body.contains(toast)) {
+                        document.body.removeChild(toast);
+                    }
+                }, 4000);
+            }
+        }
+        
+        // Initialize
+        let tauriManager;
+        document.addEventListener('DOMContentLoaded', () => {
+            tauriManager = new TauriManager();
+        });
+        
+        // Global functions for buttons
+        function minimizeWindow() { tauriManager?.minimizeWindow(); }
+        function maximizeWindow() { tauriManager?.maximizeWindow(); }
+        function closeWindow() { tauriManager?.closeWindow(); }
+        function showMessage() { tauriManager?.showMessage(); }
+        
+        function exploreTauri() {
+            if (!window.__TAURI__) {
+                alert('Tauri not available');
+                return;
+            }
+            
+            const tauri = window.__TAURI__;
+            let info = 'Tauri APIs:\n\n';
+            
+            for (const key in tauri) {
+                info += `${key}: ${Object.keys(tauri[key]).join(', ')}\n`;
+            }
+            
+            alert(info);
+        }
+        
+        async function testAll() {
+            if (!tauriManager?.window) {
+                alert('Window not initialized');
+                return;
+            }
+            
+            const window = tauriManager.window;
+            let results = '';
+            
+            // Test each method
+            const methods = ['minimize', 'maximize', 'close', 'isMaximized', 'isFullscreen'];
+            
+            for (const method of methods) {
+                try {
+                    if (method === 'close') {
+                        results += `${method}: ${typeof window[method] === 'function' ? '✅' : '❌'}\n`;
+                    } else {
+                        await window[method]();
+                        results += `${method}: ✅\n`;
+                        
+                        // Undo if needed
+                        if (method === 'minimize') {
+                            setTimeout(() => window.unminimize(), 100);
+                        }
+                    }
+                } catch (error) {
+                    results += `${method}: ❌ (${error.message})\n`;
+                }
+            }
+            
+            alert('Test Results:\n\n' + results);
+        }
+    </script>
+</body>
+</html>
