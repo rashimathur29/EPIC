@@ -12,6 +12,7 @@ use crate::tracker::aggregator::minute::MinuteEntry;
 use crate::tracker::aggregator::MinuteData;
 use crate::tracker::aggregator::SummaryGenerator;
 use crate::tracker::storage::{StorageWriter, DbActivityPersister};
+use crate::tracker::worker::{write_inactivity, make_period, InactivityReason};
 use crate::tracker::screenshot::start_screenshot_tracker;
 use crate::tracker::screenshot::DEFAULT_SCREENSHOT_INTERVAL_SEC;
 
@@ -249,6 +250,62 @@ pub fn checkout(state: State<AppState>) -> Result<String> {
     Ok(org_ts)
 }
 
+// ─────────────────────────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────────────────────────
+
+/// Returns when user last had activity (last minute_end, or checkin_time as fallback)
+fn last_activity_time(
+    conn:         &std::sync::MutexGuard<rusqlite::Connection>,
+    checkin_time: &str,
+) -> DateTime<Utc> {
+    let s: Option<String> = conn.query_row(
+        "SELECT minute_end FROM user_activity_minute
+         WHERE created_at >= ?1 ORDER BY id DESC LIMIT 1",
+        [checkin_time], |r| r.get(0),
+    ).optional().unwrap_or(None).flatten();
+
+    parse_utc(s.as_deref().unwrap_or(checkin_time))
+        .unwrap_or_else(|_| Utc::now())
+}
+
+fn parse_utc(s: &str) -> crate::Result<DateTime<Utc>> {
+    NaiveDateTime::parse_from_str(s, "%Y-%m-%d %H:%M:%S")
+        .map(|n| DateTime::<Utc>::from_naive_utc_and_offset(n, Utc))
+        .map_err(|e| crate::Error::Database(format!("Parse error: {}", e)))
+}
+
+fn daily_focus_seconds(
+    conn:            &std::sync::MutexGuard<rusqlite::Connection>,
+    today_start_str: &str,
+    now:             DateTime<Utc>,
+) -> i64 {
+    let mut total: i64 = 0;
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT checkin_time FROM user_checkin WHERE checkin_time >= ?1"
+    ) {
+        if let Ok(mut rows) = stmt.query([today_start_str]) {
+            while let Ok(Some(row)) = rows.next() {
+                let s: String = row.get(0).unwrap_or_default();
+                if let Ok(dt) = parse_utc(&s) {
+                    total += now.signed_duration_since(dt).num_seconds().max(0);
+                }
+            }
+        }
+    }
+    let mut breaks: i64 = 0;
+    if let Ok(mut stmt) = conn.prepare(
+        "SELECT COALESCE(break_duration,0) FROM user_breaks WHERE created_at >= ?1"
+    ) {
+        if let Ok(mut rows) = stmt.query([today_start_str]) {
+            while let Ok(Some(row)) = rows.next() {
+                breaks += row.get::<_, i64>(0).unwrap_or(0);
+            }
+        }
+    }
+    (total - breaks).max(0)
+}
+
 ///
 /// GET STATUS
 /// - Check if currently checked in
@@ -373,108 +430,108 @@ pub fn get_hook_stats() -> Result<serde_json::Value> {
 
 #[command]
 pub fn get_startup_status(state: State<AppState>) -> crate::Result<serde_json::Value> {
-    log::info!("[STARTUP] Checking for unfinished session on app launch");
+    log::info!("[STARTUP] Checking session…");
 
     let db = state.db.clone();
-
-    let (org_ts, aps_ts, tz) = get_timestamps();
-
-    let now = Utc::now(); // Keep Utc::now() only for duration calculations
-
-    // Today's midnight for daily focus calculation (still in UTC for consistency)
-    let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap();
-    let today_start_dt = DateTime::<Utc>::from_naive_utc_and_offset(today_start, Utc);
-    let today_start_str = today_start_dt.format("%Y-%m-%d 00:00:00").to_string();
+    let (org_ts, _aps_ts, _tz) = get_timestamps();
+    let now = Utc::now();
+    let today_start = now.date_naive()
+        .and_hms_opt(0, 0, 0).unwrap()
+        .format("%Y-%m-%d 00:00:00").to_string();
 
     let conn = db.conn.lock().unwrap();
 
-    let result = conn.query_row(
-        "SELECT checkin_time FROM user_checkin WHERE checkout_time IS NULL ORDER BY id DESC LIMIT 1",
-        [],
-        |row| row.get::<_, String>(0),
+    let checkin_opt: Option<String> = conn.query_row(
+        "SELECT checkin_time FROM user_checkin
+         WHERE checkout_time IS NULL ORDER BY id DESC LIMIT 1",
+        [], |r| r.get(0),
     ).optional()?;
 
-    let (has_active_session, checkin_time_for_log, daily_focus_seconds, offline_minutes) = match result {
-        Some(checkin_time) => {
-            // Determine offline start time — platform-specific
-            let offline_start_dt: DateTime<Utc> = {
-                #[cfg(target_os = "windows")]
-                {
-                    if let Some(event_time) = get_last_break_start_time() {
-                        log::info!("[STARTUP] Using Windows Event Log for break start: {}", event_time);
-                        event_time
-                    } else {
-                        fallback_to_db_last_minute(&conn, &checkin_time)?
-                    }
-                }
+    // Is tracker alive right now?
+    let tracker_running = state.tracker.lock().unwrap().is_some();
 
-                #[cfg(not(target_os = "windows"))]
-                {
-                    fallback_to_db_last_minute(&conn, &checkin_time)?
-                }
-            };
+    let Some(checkin_time) = checkin_opt else {
+        // No open session
+        let focus = daily_focus_seconds(&conn, &today_start, now);
+        return Ok(serde_json::json!({
+            "has_active_session":  false,
+            "checkin_time":        "",
+            "daily_focus_seconds": focus,
+            "offline_minutes":     0,
+            "message":             "Ready to check in"
+        }));
+    };
 
-            let duration = now.signed_duration_since(offline_start_dt);
-            let offline_seconds = duration.num_seconds().max(0);
-            let calculated_offline_minutes = (offline_seconds as f64 / 60.0).round() as u64;
+    // ── Tracker IS running — worker handles inactivity, we do nothing ──
+    if tracker_running {
+        conn.execute(
+            "UPDATE user_checkin SET last_active_time=?1 WHERE checkin_time=?2",
+            [&org_ts, &checkin_time],
+        ).ok();
 
-            // Log break if any offline time → Changed to user_inactivity table
-            if offline_seconds > 0 {
-                let breakin_time = offline_start_dt.format("%Y-%m-%d %H:%M:%S").to_string();
-                let breakout_time = org_ts.clone();           // Use Org timezone
-                let duration_seconds = offline_seconds as i64;
+        let focus = daily_focus_seconds(&conn, &today_start, now);
+        return Ok(serde_json::json!({
+            "has_active_session":  true,
+            "checkin_time":        checkin_time,
+            "daily_focus_seconds": focus,
+            "offline_minutes":     0,
+            "message":             "Session active"
+        }));
+    }
 
-                let _ = conn.execute(
-                    "INSERT INTO user_inactivity
-                     (inactive_start_time, inactive_end_time, inactivity_by, duration, 
-                      created_at, updated_at, apscreatedatetime, apsupdatedatetime, timezone)
-                     VALUES (?1, ?2, 'System offline / lock / sleep', ?3, ?4, ?5, ?6, ?7, ?8)",
-                    rusqlite::params![
-                        breakin_time,
-                        breakout_time,
-                        duration_seconds,
-                        org_ts,           
-                        org_ts,           
-                        aps_ts,           
-                        aps_ts,           
-                        tz
-                    ],
-                )?;
-
-                log::info!("[STARTUP] Logged system break (inactivity): {} seconds", duration_seconds);
-            }
-
-            // Update last_active_time
-            conn.execute(
-                "UPDATE user_checkin SET last_active_time = ?1, updated_at = ?1 WHERE checkin_time = ?2",
-                [&org_ts, &checkin_time],   // Use org_ts
-            )?;
-
-            // Daily focus calculation
-            let daily_focus = calculate_daily_focus(&conn, &today_start_str, now);
-
-            (true, checkin_time, daily_focus, calculated_offline_minutes)
+    // ── Tracker NOT running — app was closed/restarted ─────────────────
+    // Find when activity actually stopped (last minute written)
+    let offline_start: DateTime<Utc> = {
+        #[cfg(target_os = "windows")]
+        {
+            get_last_break_start_time()
+                .unwrap_or_else(|| last_activity_time(&conn, &checkin_time))
         }
-        None => {
-            let daily_focus = calculate_daily_focus(&conn, &today_start_str, now);
-            (false, String::new(), daily_focus, 0)
+        #[cfg(not(target_os = "windows"))]
+        {
+            last_activity_time(&conn, &checkin_time)
         }
     };
 
+    let offline_sec  = now.signed_duration_since(offline_start).num_seconds().max(0);
+    let offline_mins = (offline_sec as f64 / 60.0).round() as u64;
+
+    // Write ONE inactivity record for the gap — dedup guard prevents duplicates
+    if offline_sec > 60 {
+        // Release conn lock before write_inactivity (which takes its own lock)
+        drop(conn);
+
+        let period = make_period(offline_start, now, Some(InactivityReason::SystemOffline));
+        write_inactivity(&db, &period);
+
+        let conn2 = db.conn.lock().unwrap();
+        conn2.execute(
+            "UPDATE user_checkin SET last_active_time=?1 WHERE checkin_time=?2",
+            [&org_ts, &checkin_time],
+        ).ok();
+        let focus = daily_focus_seconds(&conn2, &today_start, now);
+
+        return Ok(serde_json::json!({
+            "has_active_session":  true,
+            "checkin_time":        checkin_time,
+            "daily_focus_seconds": focus,
+            "offline_minutes":     offline_mins,
+            "message": format!("System was offline for {} minutes — marked as break", offline_mins)
+        }));
+    }
+
+    // Short gap (< 60s) — not worth recording
+    conn.execute(
+        "UPDATE user_checkin SET last_active_time=?1 WHERE checkin_time=?2",
+        [&org_ts, &checkin_time],
+    ).ok();
+    let focus = daily_focus_seconds(&conn, &today_start, now);
     Ok(serde_json::json!({
-        "has_active_session": has_active_session,
-        "checkin_time": checkin_time_for_log,
-        "daily_focus_seconds": daily_focus_seconds,
-        "offline_minutes": offline_minutes,
-        "message": if has_active_session {
-            if offline_minutes > 5 {
-                format!("System was offline for {} minutes — marked as break", offline_minutes)
-            } else {
-                "Session resumed".to_string()
-            }
-        } else {
-            "Ready to check in".to_string()
-        }
+        "has_active_session":  true,
+        "checkin_time":        checkin_time,
+        "daily_focus_seconds": focus,
+        "offline_minutes":     offline_mins,
+        "message":             "Session resumed"
     }))
 }
 
@@ -715,98 +772,191 @@ pub fn prepare_exit(state: State<AppState>) -> Result<String> {
     Ok("App closing — partial summary saved".to_string())
 }
 
-/// RUN DIAGNOSTICS
+#[command]
+pub fn get_session_stats(state: State<AppState>) -> crate::Result<serde_json::Value> {
+    let conn = state.db.conn.lock().unwrap();
+
+    // ── Find checkin_time of the CURRENT open session ─────────────────
+    let checkin_time: Option<String> = conn.query_row(
+        "SELECT checkin_time FROM user_checkin
+         WHERE checkout_time IS NULL
+         ORDER BY id DESC LIMIT 1",
+        [],
+        |row| row.get(0),
+    ).optional()?;
+
+    let Some(checkin_time) = checkin_time else {
+        // Not checked in — return zeroes
+        return Ok(serde_json::json!({
+            "idle_seconds":       0,
+            "break_seconds":      0,
+            "keystroke_count":    0,
+            "mouse_click_count":  0,
+            "mouse_move_count":   0,
+        }));
+    };
+
+    // ── Idle seconds: confirmed inactivity (no input) ─────────────────
+    // Reason = 'Unavailability' means the idle detector fired (no keyboard/mouse).
+    // We exclude 'Screen locked' and 'System offline' because those are
+    // different concepts — they don't appear in the idle_time bar.
+    let idle_seconds: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(duration), 0)
+         FROM user_inactivity
+         WHERE inactivity_by = 'Unavailability'
+           AND inactive_start_time >= ?1",
+        [&checkin_time],
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    // ── Break seconds: deliberate breaks (user clicked Pause/Break) ───
+    // Only count breaks that have BOTH breakin_time AND breakout_time
+    // (completed breaks). Ongoing break is not counted yet.
+    let break_seconds: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(
+            CAST(
+                (strftime('%s', breakout_time) - strftime('%s', breakin_time))
+                AS INTEGER
+            )
+         ), 0)
+         FROM user_breaks
+         WHERE breakin_time >= ?1
+           AND breakout_time IS NOT NULL",
+        [&checkin_time],
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    // ── Input counts: keystrokes + clicks from activity minutes ───────
+    // Sum from user_activity_minute for this session
+    let (keystroke_count, mouse_click_count, mouse_move_count): (i64, i64, i64) = conn.query_row(
+        "SELECT
+            COALESCE(SUM(keystroke_count),   0),
+            COALESCE(SUM(mouse_click_count), 0),
+            COALESCE(SUM(mouse_move_count),  0)
+         FROM user_activity_minute
+         WHERE created_at >= ?1",
+        [&checkin_time],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ).unwrap_or((0, 0, 0));
+
+    Ok(serde_json::json!({
+        "idle_seconds":      idle_seconds,
+        "break_seconds":     break_seconds,
+        "keystroke_count":   keystroke_count,
+        "mouse_click_count": mouse_click_count,
+        "mouse_move_count":  mouse_move_count,
+    }))
+}
+
+// ─────────────────────────────────────────────────────────────
+// get_daily_progress — returns the complete daily progress data for the ring + bars on first load and on resume.
+// ─────────────────────────────────────────────────────────────
 
 #[command]
-pub fn run_diagnostics() -> Result<serde_json::Value> {
-    log::info!("[DIAGNOSTICS] Running system diagnostics...");
-    
-    #[cfg(target_os = "windows")]
+pub fn get_daily_progress(state: State<AppState>) -> crate::Result<serde_json::Value> {
+    use chrono::{Utc, NaiveDateTime, DateTime};
+    use crate::timestamp::TimestampManager;
+
+    let conn = state.db.conn.lock().unwrap();
+    let tz_str = TimestampManager::get_org_timezone();
+    let now_utc = Utc::now();
+
+    // Today start in org timezone
+    let tz: chrono_tz::Tz = tz_str.parse().unwrap_or(chrono_tz::UTC);
+    let now_local  = now_utc.with_timezone(&tz);
+    let today_str  = now_local.format("%Y-%m-%d 00:00:00").to_string();
+
+    // ── Active seconds (all sessions today) ──────────────────────────
+    let mut active_sec: i64 = 0;
     {
-        let mut issues = Vec::new();
-        let mut suggestions = Vec::new();
-        
-        // Check if running as admin
-        let is_admin = is_elevated();
-        if !is_admin {
-            suggestions.push("Try running as Administrator for better compatibility".to_string());
-        }
-        
-        // Check for common conflicting processes
-        let conflicting_processes = vec![
-            "obs64.exe", "obs32.exe",           // OBS Studio
-            "AutoHotkey.exe", "AutoHotkeyU64.exe", // AutoHotkey
-            "Camtasia.exe",                     // Camtasia
-            "TeamViewer.exe",                   // TeamViewer
-            "logmein.exe",                      // LogMeIn
-        ];
-        
-        for process in conflicting_processes {
-            if is_process_running(process) {
-                issues.push(format!("Detected potentially conflicting process: {}", process));
-                suggestions.push(format!("Consider closing {} before starting EPIC", process));
+        let mut stmt = conn.prepare(
+            "SELECT checkin_time, COALESCE(checkout_time, ?1) as end_t
+             FROM user_checkin
+             WHERE DATE(checkin_time) = DATE(?2)"
+        ).unwrap();
+
+        let now_str = now_local.format("%Y-%m-%d %H:%M:%S").to_string();
+        let today_date = now_local.format("%Y-%m-%d").to_string();
+
+        let rows = stmt.query_map(
+            rusqlite::params![now_str, today_date],
+            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        ).unwrap();
+
+        for row in rows.flatten() {
+            let (ci, co) = row;
+            if let (Ok(ci_dt), Ok(co_dt)) = (
+                NaiveDateTime::parse_from_str(&ci, "%Y-%m-%d %H:%M:%S"),
+                NaiveDateTime::parse_from_str(&co, "%Y-%m-%d %H:%M:%S"),
+            ) {
+                active_sec += (co_dt - ci_dt).num_seconds().max(0);
             }
         }
-        
-        let diagnostics = serde_json::json!({
-            "is_admin": is_admin,
-            "issues": issues,
-            "suggestions": suggestions,
-            "timestamp": chrono::Utc::now().to_rfc3339()
-        });
-        
-        log::info!("[DIAGNOSTICS] Results: {:?}", diagnostics);
-        Ok(diagnostics)
     }
-    
-    #[cfg(not(target_os = "windows"))]
-    {
-        Ok(serde_json::json!({
-            "error": "Diagnostics only available on Windows"
-        }))
-    }
-}
 
-#[cfg(target_os = "windows")]
-fn is_elevated() -> bool {
-    use std::mem;
-    use windows::Win32::Foundation::HANDLE;
-    use windows::Win32::Security::{GetTokenInformation, TokenElevation, TOKEN_ELEVATION, TOKEN_QUERY};
-    use windows::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
-    
-    unsafe {
-        let mut token: HANDLE = HANDLE::default();
-        if OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut token).is_err() {
-            return false;
-        }
-        
-        let mut elevation = TOKEN_ELEVATION { TokenIsElevated: 0 };
-        let mut size = 0u32;
-        
-        if GetTokenInformation(
-            token,
-            TokenElevation,
-            Some(&mut elevation as *mut _ as *mut _),
-            mem::size_of::<TOKEN_ELEVATION>() as u32,
-            &mut size,
-        ).is_ok() {
-            elevation.TokenIsElevated != 0
-        } else {
-            false
-        }
-    }
-}
+    // ── Idle seconds today (Unavailability only) ──────────────────────
+    let idle_sec: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(duration), 0)
+         FROM user_inactivity
+         WHERE inactivity_by = 'Unavailability'
+           AND DATE(inactive_start_time) = DATE(?1)",
+        [&today_str],
+        |row| row.get(0),
+    ).unwrap_or(0);
 
-#[cfg(target_os = "windows")]
-fn is_process_running(process_name: &str) -> bool {
-    use std::process::Command;
-    
-    if let Ok(output) = Command::new("tasklist")
-        .args(&["/FI", &format!("IMAGENAME eq {}", process_name)])
-        .output() {
-        if let Ok(stdout) = String::from_utf8(output.stdout) {
-            return stdout.contains(process_name);
-        }
-    }
-    false
+    // ── Break seconds today ───────────────────────────────────────────
+    let break_sec: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(
+            CAST(
+                (strftime('%s', breakout_time) - strftime('%s', breakin_time))
+                AS INTEGER
+            )
+         ), 0)
+         FROM user_breaks
+         WHERE DATE(breakin_time) = DATE(?1)
+           AND breakout_time IS NOT NULL",
+        [&today_str],
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    // ── Keystroke / click counts today ────────────────────────────────
+    let (keystrokes, clicks): (i64, i64) = conn.query_row(
+        "SELECT
+            COALESCE(SUM(keystroke_count),   0),
+            COALESCE(SUM(mouse_click_count), 0)
+         FROM user_activity_minute
+         WHERE DATE(created_at) = DATE(?1)",
+        [&today_str],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ).unwrap_or((0, 0));
+
+    // ── Yesterday active seconds (for the ring stat) ──────────────────
+    let yesterday_str = (now_local - chrono::Duration::days(1))
+        .format("%Y-%m-%d").to_string();
+
+    let yesterday_sec: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(
+            CAST(
+                (strftime('%s', COALESCE(checkout_time, checkin_time))
+                 - strftime('%s', checkin_time))
+                AS INTEGER
+            )
+         ), 0)
+         FROM user_checkin
+         WHERE DATE(checkin_time) = DATE(?1)",
+        [&yesterday_str],
+        |row| row.get(0),
+    ).unwrap_or(0);
+
+    // Subtract breaks from active time for net active
+    let net_active = (active_sec - break_sec - idle_sec).max(0);
+
+    Ok(serde_json::json!({
+        "active_seconds":    net_active,
+        "idle_seconds":      idle_sec,
+        "break_seconds":     break_sec,
+        "keystroke_count":   keystrokes,
+        "mouse_click_count": clicks,
+        "yesterday_minutes": yesterday_sec / 60,
+    }))
 }

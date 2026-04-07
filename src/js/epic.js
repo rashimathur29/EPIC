@@ -1,9 +1,25 @@
 'use strict';
 /*
   epic.js — single source of truth for all UI logic
+
+  HOW IDLE + BREAK TIME WORK:
+  ────────────────────────────
+  Every 10 seconds we call invoke('get_session_stats') which queries:
+
+    idle_seconds  → SUM(duration) FROM user_inactivity
+                    WHERE inactivity_by = 'Unavailability'
+                    AND inactive_start_time >= current checkin_time
+
+    break_seconds → SUM(breakout_time - breakin_time) FROM user_breaks
+                    WHERE breakout_time IS NOT NULL (completed breaks)
+                    AND breakin_time >= current checkin_time
+
+  These are the REAL values from Rust/DB — not JS estimates.
+  The active stopwatch (get_total_active_seconds) already excludes breaks.
+  We keep idle + break separate so the bars update independently.
 */
 
-/* ── Tauri invoke (falls back to console.log in browser) ── */
+/* ── Tauri invoke ── */
 const invoke = window.__TAURI__?.core?.invoke
     ?? (async (cmd, args) => { console.log('[DEV invoke]', cmd, args); return null; });
 
@@ -14,7 +30,6 @@ const setText = (id, v) => { const el = $(id); if (el) el.textContent = v; };
 
 /* ══════════════════════════════════════════════════════════════════
    COMPONENT LOADER
-   Returns a Promise — critical so DOMContentLoaded can await them
 ══════════════════════════════════════════════════════════════════ */
 function loadComponent(selector, path) {
     return fetch(path)
@@ -27,7 +42,7 @@ function loadComponent(selector, path) {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   BANNER  (toast notification)
+   BANNER
 ══════════════════════════════════════════════════════════════════ */
 function showBanner(msg, type = 'info', dur = 5000) {
     const old = $('_epic_banner');
@@ -68,17 +83,14 @@ const NAV_META = {
 };
 
 function navigate(page) {
-    /* update sidebar active state */
     $$('.sn-item').forEach(b => b.classList.remove('active'));
     const navBtn = document.querySelector(`.sn-item[data-page="${page}"]`);
     if (navBtn) navBtn.classList.add('active');
 
-    /* show correct page panel */
     $$('.page').forEach(p => p.classList.remove('active'));
     const pg = $(`page-${page}`);
     if (pg) pg.classList.add('active');
 
-    /* update page-bar title + icon */
     const m = NAV_META[page];
     if (m) {
         setText('pb-title', m.title);
@@ -86,17 +98,9 @@ function navigate(page) {
         if (icon) icon.className = `${m.icon} page-bar__icon`;
     }
 
-    /* extra re-renders for pages with dynamic content */
-    if (page === 'breaks') {
-        wireBreakPage();   /* safe to call multiple times — guarded */
-        renderTimers();
-    }
-    if (page === 'apps') {
-        renderApps();
-        renderUrls();
-    }
+    if (page === 'breaks') { wireBreakPage(); renderTimers(); }
+    if (page === 'apps')   { renderApps(); renderUrls(); }
 
-    /* close mobile sidenav */
     document.querySelector('.sidenav')?.classList.remove('open');
     $('nav-overlay')?.classList.remove('show');
 }
@@ -122,7 +126,7 @@ function wireMobileMenu() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   WINDOW CONTROLS  (Tauri decorations=false)
+   WINDOW CONTROLS
 ══════════════════════════════════════════════════════════════════ */
 function wireWindowControls() {
     const getWin = () => window.__TAURI__?.window?.getCurrentWindow?.() ?? null;
@@ -134,24 +138,14 @@ function wireWindowControls() {
             if (icon) icon.className = (await w.isMaximized())
                 ? 'far fa-window-restore'
                 : 'far fa-window-maximize';
-        } catch { /* ignore */ }
+        } catch { }
     }
 
-    $('btn-minimize')?.addEventListener('click', async () => {
-        try { await getWin()?.minimize(); } catch { }
-    });
-
+    $('btn-minimize')?.addEventListener('click', async () => { try { await getWin()?.minimize(); } catch { } });
     $('btn-maximize')?.addEventListener('click', async () => {
-        try {
-            const w = getWin(); if (!w) return;
-            (await w.isMaximized()) ? await w.unmaximize() : await w.maximize();
-            syncMaxIcon();
-        } catch { }
+        try { const w = getWin(); (await w?.isMaximized()) ? await w?.unmaximize() : await w?.maximize(); syncMaxIcon(); } catch { }
     });
-
-    $('btn-close')?.addEventListener('click', async () => {
-        try { await getWin()?.close(); } catch { }
-    });
+    $('btn-close')?.addEventListener('click', async () => { try { await getWin()?.close(); } catch { } });
 
     window.addEventListener('resize', syncMaxIcon);
     syncMaxIcon();
@@ -163,10 +157,7 @@ function wireWindowControls() {
 function wirePopover() {
     const pop  = $('popover');
     const prof = $('btn-profile');
-    if (!pop || !prof) {
-        console.warn('[wirePopover] elements not found — header may not have loaded');
-        return;
-    }
+    if (!pop || !prof) { console.warn('[wirePopover] elements not found'); return; }
 
     function place() {
         const r = prof.getBoundingClientRect();
@@ -199,7 +190,6 @@ function wirePopover() {
 
     window.addEventListener('resize', () => { if (pop.classList.contains('open')) place(); });
 
-    /* ── Popover actions ── */
     async function doSignout() {
         try { await invoke('logout'); } catch { }
         sessionStorage.clear();
@@ -209,23 +199,19 @@ function wirePopover() {
     $('pop-signout')     ?.addEventListener('click', doSignout);
     $('pop-signout-org') ?.addEventListener('click', doSignout);
     $('settings-signout')?.addEventListener('click', doSignout);
-
     $('pop-about')?.addEventListener('click', () => {
         pop.classList.remove('open');
         showBanner('EPIC v1.0.0 — Aiprus Software', 'info', 4000);
     });
-
     $('pop-analytics')?.addEventListener('click', async () => {
         pop.classList.remove('open');
         try { await invoke('send_analytics'); showBanner('Analytics sent ✓', 'success'); }
         catch (e) { showBanner('Failed: ' + e, 'error'); }
     });
-
     $('pop-refresh')?.addEventListener('click', async () => {
         pop.classList.remove('open');
         try { await invoke('refresh_data'); showBanner('Refreshed ✓', 'success'); } catch { }
     });
-
     $('pop-logs')?.addEventListener('click', async () => {
         pop.classList.remove('open');
         try { await invoke('send_logs'); showBanner('Logs sent ✓', 'success'); } catch { }
@@ -233,11 +219,21 @@ function wirePopover() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   STOPWATCH  (session timer — reads from Tauri every second)
+   SESSION STATE
+   ─────────────────────────────────────────────────────────────────
+   activeSec    → from Rust: get_total_active_seconds (every 1s)
+   idleSec      → from Rust: get_session_stats.idle_seconds (every 10s)
+   breakSec     → from Rust: get_session_stats.break_seconds (every 10s)
+   keystrokesToday / clicksToday → from same stats call
 ══════════════════════════════════════════════════════════════════ */
-let _swInterval = null;
-let activeSec   = 0;
-let goalH       = 8;
+let _swInterval    = null;   // stopwatch tick
+let _statsInterval = null;   // idle+break poll
+let activeSec      = 0;
+let idleSec        = 0;
+let breakSec       = 0;
+let keystrokesToday = 0;
+let clicksToday     = 0;
+let goalH           = 8;
 
 const fmtClock = s => [
     Math.floor(s / 3600),
@@ -245,25 +241,55 @@ const fmtClock = s => [
     s % 60,
 ].map(v => String(v).padStart(2, '0')).join(':');
 
+/* ── Active time (1s tick) ── */
 async function tickSW() {
     try {
         const v = await invoke('get_total_active_seconds');
-        if (v !== null && v !== undefined) activeSec = Number(v);
+        if (v !== null && v !== undefined) activeSec = Math.max(0, Number(v));
     } catch { /* keep last value */ }
     setText('stopwatchDisplay', fmtClock(activeSec));
     updateRing();
     updateGlance();
 }
 
-function startSW() {
+function onStatsUpdate(payload) {
+    // payload is { idle_seconds, break_seconds, keystroke_count,
+    //              mouse_click_count, mouse_move_count }
+    idleSec        = Math.max(0, Number(payload.idle_seconds      ?? 0));
+    breakSec       = Math.max(0, Number(payload.break_seconds     ?? 0));
+    keystrokesToday = Math.max(0, Number(payload.keystroke_count  ?? 0));
+    clicksToday     = Math.max(0, Number(payload.mouse_click_count ?? 0));
+
+    // Update bars immediately — this only runs when Rust says something changed
+    updateRing();
+    updateGlance();
+}
+
+async function startSW() {
+    // 1s active time tick
     tickSW();
     _swInterval = setInterval(tickSW, 1000);
+
+    // Subscribe to Rust push events (replaces polling entirely)
+    _statsUnlisten = await listen('session-stats-update', event => {
+        onStatsUpdate(event.payload);
+    });
+
+    // Break toggled event — update break bar instantly when user pauses
+    _breakUnlisten = await listen('break-toggled', _event => {
+        // Worker will emit session-stats-update shortly after
+        // but we can show a visual cue immediately if needed
+    });
 }
 
 function stopSW() {
-    clearInterval(_swInterval);
-    _swInterval = null;
-    activeSec   = 0;
+    clearInterval(_swInterval); _swInterval = null;
+
+    // Unsubscribe from Rust events — no memory leaks
+    if (_statsUnlisten)  { _statsUnlisten();  _statsUnlisten  = null; }
+    if (_breakUnlisten)  { _breakUnlisten();  _breakUnlisten  = null; }
+
+    activeSec = idleSec = breakSec = keystrokesToday = clicksToday = 0;
     setText('stopwatchDisplay', '00:00:00');
     updateRing();
     updateGlance();
@@ -273,48 +299,33 @@ function setSessionUI(active) {
     const btnStart = $('startStopwatch');
     const btnEnd   = $('endStopwatch');
     const pill     = $('sess-pill');
-
-    if (btnStart) {
-        btnStart.disabled   = active;
-        btnStart.innerHTML  = '<i class="fas fa-play"></i> Start session';
-    }
-    if (btnEnd) {
-        btnEnd.disabled = !active;
-    }
+    if (btnStart) { btnStart.disabled = active; btnStart.innerHTML = '<i class="fas fa-play"></i> Start session'; }
+    if (btnEnd)   btnEnd.disabled = !active;
     if (pill) {
         pill.classList.toggle('running', active);
         setText('sess-pill-txt', active ? 'Session active' : 'Not started');
     }
 }
 
-/* ── Wire the Productivity page ── */
 function wireProductivityPage() {
-    /* Start session */
     $('startStopwatch')?.addEventListener('click', async () => {
         const btn = $('startStopwatch');
         try {
             const already = await invoke('get_status') ?? false;
             if (already) { showBanner('Already checked in!', 'warn'); return; }
-            if (btn) {
-                btn.disabled  = true;
-                btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting…';
-            }
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Starting…'; }
             await invoke('checkin');
             setSessionUI(true);
-            startSW();
+            await startSW();   // async — sets up event listener
             showBanner('✅ Session started', 'success');
             addDailyEvent('checkin', 'Check-in',
                 new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
         } catch (err) {
-            if (btn) {
-                btn.disabled  = false;
-                btn.innerHTML = '<i class="fas fa-play"></i> Start session';
-            }
+            if (btn) { btn.disabled = false; btn.innerHTML = '<i class="fas fa-play"></i> Start session'; }
             showBanner('Check-in failed: ' + err, 'error');
         }
     });
 
-    /* End session */
     $('endStopwatch')?.addEventListener('click', async () => {
         try {
             await invoke('checkout');
@@ -326,28 +337,12 @@ function wireProductivityPage() {
         } catch (e) { showBanner('Check-out failed: ' + e, 'error'); }
     });
 
-    /* Goal selector */
-    $('goal-sel')?.addEventListener('change', function () {
-        goalH = Number(this.value);
-        setText('stat-goal', this.value);
-        updateRing();
-    });
-
+    $('goal-sel')?.addEventListener('change', function () { goalH = Number(this.value); setText('stat-goal', this.value); updateRing(); });
     $('edit-goal-btn')?.addEventListener('click', () => navigate('settings'));
-
-    /* Task panel */
-    $('task-add-btn')?.addEventListener('click', () => {
-        $('task-input-row')?.classList.toggle('show');
-        $('task-input')?.focus();
-    });
-    $('task-cancel')?.addEventListener('click', () => {
-        $('task-input-row')?.classList.remove('show');
-    });
+    $('task-add-btn')?.addEventListener('click', () => { $('task-input-row')?.classList.toggle('show'); $('task-input')?.focus(); });
+    $('task-cancel')?.addEventListener('click', () => $('task-input-row')?.classList.remove('show'));
     $('task-save')?.addEventListener('click', addTask);
-    $('task-input')?.addEventListener('keydown', e => {
-        if (e.key === 'Enter')  addTask();
-        if (e.key === 'Escape') $('task-input-row')?.classList.remove('show');
-    });
+    $('task-input')?.addEventListener('keydown', e => { if (e.key === 'Enter') addTask(); if (e.key === 'Escape') $('task-input-row')?.classList.remove('show'); });
 
     renderTasks();
     renderWeek();
@@ -356,13 +351,11 @@ function wireProductivityPage() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   DAILY PROGRESS RING  +  BARS  +  GLANCE
+   PROGRESS RING + BARS + GLANCE
+   ─────────────────────────────────────────────────────────────────
+   activeSec, idleSec, breakSec are ALL from Rust — never guessed.
 ══════════════════════════════════════════════════════════════════ */
-const CIRCUMFERENCE = 364;   /* 2πr where r=58 in the SVG */
-let idleSec         = 0;
-let breakSec        = 0;
-let keystrokesToday = 0;
-let clicksToday     = 0;
+const CIRCUMFERENCE = 364;
 
 function fmtDur(s) {
     if (!s || s <= 0) return '—';
@@ -373,25 +366,24 @@ function fmtDur(s) {
 function updateRing() {
     const progress = Math.min(activeSec / (goalH * 3600), 1);
 
-    /* active arc */
     const ringEl = $('ring-circle');
     if (ringEl) ringEl.style.strokeDashoffset = CIRCUMFERENCE - (progress * CIRCUMFERENCE);
 
-    /* idle arc */
-    const total   = activeSec + idleSec;
-    const idleFrac = total > 0 ? Math.min(idleSec / total, 1) : 0;
-    const idleEl  = $('ring-idle-circle');
+    // Idle arc as proportion of total session time (active + idle)
+    const totalTracked = activeSec + idleSec;
+    const idleFrac     = totalTracked > 0 ? Math.min(idleSec / totalTracked, 1) : 0;
+    const idleEl = $('ring-idle-circle');
     if (idleEl) idleEl.style.strokeDashoffset = CIRCUMFERENCE - (idleFrac * CIRCUMFERENCE);
 
-    /* centre label */
+    // Centre label
     const mins = Math.floor(activeSec / 60);
     const hrs  = activeSec / 3600;
     setText('ring-num',  mins >= 60 ? hrs.toFixed(1) : mins);
     setText('ring-unit', mins >= 60 ? 'hours' : 'min');
 
-    /* score badge */
-    const pct     = Math.round(progress * 100);
-    const badge   = $('score-badge');
+    // Score badge
+    const pct = Math.round(progress * 100);
+    const badge    = $('score-badge');
     const badgeTxt = $('score-badge-txt');
     if (badge && badgeTxt) {
         badgeTxt.textContent = pct + '% of daily goal';
@@ -401,15 +393,19 @@ function updateRing() {
         );
     }
 
-    /* active / idle / break bars */
+    // Active / Idle / Break bars
+    // These show breakdown of all tracked time in the session
     const allTime = Math.max(activeSec + idleSec + breakSec, 1);
     const ap = Math.round((activeSec / allTime) * 100);
     const ip = Math.round((idleSec   / allTime) * 100);
     const bp = Math.round((breakSec  / allTime) * 100);
+
     const ab = $('dp-active-bar'), ib = $('dp-idle-bar'), bb = $('dp-break-bar');
     if (ab) ab.style.width = ap + '%';
     if (ib) ib.style.width = ip + '%';
     if (bb) bb.style.width = bp + '%';
+
+    // Labels next to bars — show real durations from DB
     setText('dp-active-label', fmtDur(activeSec));
     setText('dp-idle-label',   fmtDur(idleSec));
     setText('dp-break-label',  fmtDur(breakSec));
@@ -434,8 +430,11 @@ function updateGlance() {
     const totalMins = Math.floor(activeSec / 60);
     const h = Math.floor(totalMins / 60), m = totalMins % 60;
     setText('g-active', h > 0 ? `${h}h ${m}m` : `${totalMins}m`);
-    setText('g-idle',   fmtDur(idleSec));
-    setText('g-break',  fmtDur(breakSec));
+
+    // Show real values from DB — or '—' if zero (not checked in / no data yet)
+    setText('g-idle',   idleSec  > 0 ? fmtDur(idleSec)  : '—');
+    setText('g-break',  breakSec > 0 ? fmtDur(breakSec) : '—');
+
     const score = Math.min(Math.round((activeSec / (goalH * 3600)) * 100), 100);
     setText('g-score',  activeSec > 0 ? score + '%' : '—');
     setText('g-keys',   keystrokesToday > 0 ? keystrokesToday.toLocaleString() : '—');
@@ -449,7 +448,7 @@ function renderWeek() {
     const el = $('week-chart'); if (!el) return;
 
     const now    = new Date();
-    const dow    = now.getDay();  /* 0=Sun */
+    const dow    = now.getDay();
     const monday = new Date(now);
     monday.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1));
     const sunday = new Date(monday);
@@ -458,7 +457,7 @@ function renderWeek() {
     setText('week-range', `${fmt(monday)} – ${fmt(sunday)}`);
 
     const DAYS   = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-    const hrs    = [7.2, 6.8, 8.0, 5.5, 0, 0, 0]; /* TODO: replace with invoke('get_weekly_hours') */
+    const hrs    = [0, 0, 0, 0, 0, 0, 0]; // TODO: invoke('get_weekly_hours')
     const maxH   = Math.max(...hrs, goalH, 1);
     const todayI = dow === 0 ? 6 : dow - 1;
 
@@ -474,10 +473,10 @@ function renderWeek() {
         </div>`;
     }).join('');
 
-    const worked    = hrs.filter(v => v > 0).length;
-    const totalHrs  = hrs.reduce((a, b) => a + b, 0);
-    const avgHrs    = worked > 0 ? totalHrs / worked : 0;
-    const bestIdx   = hrs.indexOf(Math.max(...hrs));
+    const worked   = hrs.filter(v => v > 0).length;
+    const totalHrs = hrs.reduce((a, b) => a + b, 0);
+    const avgHrs   = worked > 0 ? totalHrs / worked : 0;
+    const bestIdx  = hrs.indexOf(Math.max(...hrs));
     setText('ws-total', totalHrs.toFixed(1) + 'h');
     setText('ws-avg',   avgHrs.toFixed(1) + 'h');
     setText('ws-best',  hrs[bestIdx] > 0 ? DAYS[bestIdx] : '—');
@@ -524,21 +523,11 @@ function renderTasks() {
 
 /* ══════════════════════════════════════════════════════════════════
    BREAK TIMERS
-   ──────────────────────────────────────────────────────────────────
-   CSS classes used (must match epic.css exactly):
-     .timer-card  .tc-info  .tc-name  .tc-time  .tc-controls
-     .icon-btn  .icon-btn--primary  .icon-btn--del
-
-   HTML structure in break.html:
-     id="t-h"  id="t-m"  id="t-s"   (inputs, data-f on buttons)
-     id="t-name"  id="add-timer-btn"
-     id="timer-list"  id="timer-empty"
-     buttons: data-f="t-h" data-s="1"  etc.
 ══════════════════════════════════════════════════════════════════ */
-let _timers         = [];   /* array of timer objects               */
-let _timerSeq       = 1;    /* auto-name counter                    */
-let _ticks          = {};   /* { id: intervalHandle }               */
-let _breakWired     = false; /* prevent double-wiring on re-nav     */
+let _timers     = [];
+let _timerSeq   = 1;
+let _ticks      = {};
+let _breakWired = false;
 
 const fmtTimer = s => [
     Math.floor(s / 3600),
@@ -546,20 +535,16 @@ const fmtTimer = s => [
     s % 60,
 ].map(v => String(v).padStart(2, '0')).join(':');
 
-/* ── Render the active-timers list ── */
 function renderTimers() {
     const list  = $('timer-list');
     const empty = $('timer-empty');
-    if (!list) return;   /* break page not visible yet — skip */
-
+    if (!list) return;
     if (!_timers.length) {
         list.innerHTML = '';
         if (empty) empty.style.display = '';
         return;
     }
     if (empty) empty.style.display = 'none';
-
-    /* Build HTML using the exact class names from epic.css */
     list.innerHTML = _timers.map(t => `
         <div class="timer-card" data-id="${t.id}">
             <div class="tc-info">
@@ -580,7 +565,6 @@ function renderTimers() {
             </div>
         </div>`).join('');
 
-    /* Event delegation per card */
     list.querySelectorAll('.timer-card').forEach(card => {
         const id = Number(card.dataset.id);
         card.querySelectorAll('[data-action]').forEach(btn => {
@@ -595,97 +579,64 @@ function renderTimers() {
     });
 }
 
-/* ── Step a time field up or down ── */
 function stepField(fieldId, dir) {
-    const el = $(fieldId);
-    if (!el) return;
+    const el = $(fieldId); if (!el) return;
     const max = fieldId === 't-h' ? 23 : 59;
-    let   val = (parseInt(el.value, 10) || 0) + dir;
+    let val = (parseInt(el.value, 10) || 0) + dir;
     if (val < 0)   val = max;
     if (val > max) val = 0;
     el.value = String(val).padStart(2, '0');
 }
 
-/* ── Wire break page — called once after break.html is in DOM ── */
 function wireBreakPage() {
     if (_breakWired) return;
     _breakWired = true;
 
-    /* ▲▼ step buttons — data-f holds field id, data-s holds direction */
     $$('[data-f][data-s]').forEach(btn => {
-        btn.addEventListener('click', () => {
-            stepField(btn.dataset.f, Number(btn.dataset.s));
-        });
+        btn.addEventListener('click', () => stepField(btn.dataset.f, Number(btn.dataset.s)));
     });
 
-    /* Also allow typing directly — clamp on blur */
     ['t-h', 't-m', 't-s'].forEach(id => {
         const el = $(id); if (!el) return;
         el.addEventListener('blur', () => {
             const max = id === 't-h' ? 23 : 59;
-            let val = parseInt(el.value, 10) || 0;
-            val = Math.max(0, Math.min(max, val));
-            el.value = String(val).padStart(2, '0');
+            el.value = String(Math.max(0, Math.min(max, parseInt(el.value, 10) || 0))).padStart(2, '0');
         });
-        el.addEventListener('keydown', e => {
-            if (e.key === 'Enter') $('add-timer-btn')?.click();
-        });
+        el.addEventListener('keydown', e => { if (e.key === 'Enter') $('add-timer-btn')?.click(); });
     });
 
-    /* Add timer button */
     $('add-timer-btn')?.addEventListener('click', () => {
         const h   = parseInt($('t-h')?.value,  10) || 0;
         const m   = parseInt($('t-m')?.value,  10) || 0;
         const s   = parseInt($('t-s')?.value,  10) || 0;
         const tot = h * 3600 + m * 60 + s;
+        if (tot <= 0) { showBanner('Set a duration first', 'warn'); return; }
 
-        if (tot <= 0) {
-            showBanner('Set a duration first (hours / mins / secs)', 'warn');
-            return;
-        }
-
-        const rawName = $('t-name')?.value?.trim();
-        const name    = rawName || `Timer ${_timerSeq}`;
+        const name = $('t-name')?.value?.trim() || `Timer ${_timerSeq}`;
         _timerSeq++;
-
         _timers.push({ id: Date.now(), name, tot, rem: tot, running: false });
 
-        /* reset inputs */
         ['t-h', 't-m', 't-s'].forEach(id => { const e = $(id); if (e) e.value = '00'; });
         const tn = $('t-name'); if (tn) tn.value = '';
-
         renderTimers();
         showBanner(`Timer "${name}" added ✓`, 'success', 3000);
     });
 
-    /* Render any timers already in the array (e.g. user navigated away and back) */
     renderTimers();
 }
 
-/* ── Toggle start / pause ── */
 function timerToggle(id) {
-    const t = _timers.find(x => x.id === id);
-    if (!t) return;
-
+    const t = _timers.find(x => x.id === id); if (!t) return;
     if (t.running) {
-        /* PAUSE */
-        clearInterval(_ticks[id]);
-        delete _ticks[id];
-        t.running = false;
+        clearInterval(_ticks[id]); delete _ticks[id]; t.running = false;
     } else {
-        /* START */
-        if (t.rem <= 0) {
-            showBanner('Timer is at zero — reset it first', 'warn');
-            return;
-        }
+        if (t.rem <= 0) { showBanner('Timer is at zero — reset it first', 'warn'); return; }
         t.running = true;
         _ticks[id] = setInterval(() => {
             t.rem -= 1;
             if (t.rem <= 0) {
-                t.rem     = 0;
-                t.running = false;
-                clearInterval(_ticks[id]);
-                delete _ticks[id];
+                t.rem = 0; t.running = false;
+                clearInterval(_ticks[id]); delete _ticks[id];
                 showBanner(`⏰ Timer "${t.name}" finished!`, 'info', 8000);
             }
             renderTimers();
@@ -694,32 +645,23 @@ function timerToggle(id) {
     renderTimers();
 }
 
-/* ── Reset to full duration ── */
 function timerReset(id) {
-    const t = _timers.find(x => x.id === id);
-    if (!t) return;
-    clearInterval(_ticks[id]);
-    delete _ticks[id];
-    t.running = false;
-    t.rem     = t.tot;
+    const t = _timers.find(x => x.id === id); if (!t) return;
+    clearInterval(_ticks[id]); delete _ticks[id];
+    t.running = false; t.rem = t.tot;
     renderTimers();
 }
 
-/* ── Delete a timer ── */
 function timerDelete(id) {
-    clearInterval(_ticks[id]);
-    delete _ticks[id];
+    clearInterval(_ticks[id]); delete _ticks[id];
     _timers = _timers.filter(x => x.id !== id);
     renderTimers();
 }
 
-/* ── Tiny HTML escaper ── */
 function escHtml(s) {
     return String(s)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;')
-        .replace(/"/g, '&quot;');
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /* ══════════════════════════════════════════════════════════════════
@@ -729,17 +671,12 @@ function wireCallPage() {
     function toggleMute(btnId, iconOn, iconOff) {
         const btn = $(btnId); if (!btn) return;
         const muted = btn.classList.toggle('muted');
-        const i     = btn.querySelector('i');
+        const i = btn.querySelector('i');
         if (i) i.className = `fas ${muted ? iconOff : iconOn}`;
         btn.setAttribute('aria-pressed', String(muted));
     }
-
-    $('btn-call-video')?.addEventListener('click', () =>
-        toggleMute('btn-call-video', 'fa-video', 'fa-video-slash'));
-
-    $('btn-call-audio')?.addEventListener('click', () =>
-        toggleMute('btn-call-audio', 'fa-microphone', 'fa-microphone-slash'));
-
+    $('btn-call-video')?.addEventListener('click', () => toggleMute('btn-call-video', 'fa-video', 'fa-video-slash'));
+    $('btn-call-audio')?.addEventListener('click', () => toggleMute('btn-call-audio', 'fa-microphone', 'fa-microphone-slash'));
     $('btn-call-end')?.addEventListener('click', () => {
         if (!confirm('End the call?')) return;
         ['btn-call-video', 'btn-call-audio'].forEach(id => {
@@ -753,7 +690,7 @@ function wireCallPage() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   APP & URL TRACKING  (sample data — replace with invoke() when ready)
+   APP & URL TRACKING (sample data)
 ══════════════════════════════════════════════════════════════════ */
 function renderApps() {
     const tb = $('app-tbody'); if (!tb) return;
@@ -793,7 +730,7 @@ function renderUrls() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   USER INFO  (from sessionStorage, set by login.html)
+   USER INFO
 ══════════════════════════════════════════════════════════════════ */
 function loadUser() {
     const first = sessionStorage.getItem('firstName') || 'U';
@@ -809,7 +746,7 @@ function loadUser() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   STARTUP  (resume Tauri session if active when app was last closed)
+   STARTUP — resume Tauri session if active
 ══════════════════════════════════════════════════════════════════ */
 async function startup() {
     try {
@@ -818,7 +755,7 @@ async function startup() {
 
         if (st.has_active_session) {
             setSessionUI(true);
-            startSW();
+            startSW();   // starts both 1s active tick AND 10s stats poll
 
             if (st.checkin_time) {
                 const t = new Date(st.checkin_time).toLocaleTimeString('en-GB',
@@ -832,12 +769,14 @@ async function startup() {
                     `Offline · ${st.offline_minutes} min`,
                     new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }),
                     st.offline_minutes + 'm');
-                breakSec += st.offline_minutes * 60;
             } else {
                 showBanner('Session resumed', 'success', 3000);
             }
 
             try { await invoke('resume_tracking'); } catch { }
+
+            // Fetch stats immediately after resuming so bars populate right away
+            await fetchSessionStats();
         }
     } catch (e) {
         console.warn('[startup]', e);
@@ -845,18 +784,10 @@ async function startup() {
 }
 
 /* ══════════════════════════════════════════════════════════════════
-   MAIN ENTRY POINT
-   ──────────────────────────────────────────────────────────────────
-   Sequence:
-   1. Wait for DOMContentLoaded (HTML shell ready)
-   2. Fetch ALL 7 components in parallel
-   3. Await Promise.allSettled — every component is now in the DOM
-   4. Wire every listener (safe because DOM is complete)
-   5. Populate data + start session if needed
+   MAIN ENTRY
 ══════════════════════════════════════════════════════════════════ */
 document.addEventListener('DOMContentLoaded', async () => {
 
-    /* ── Step 1: load all HTML fragments ── */
     await Promise.allSettled([
         loadComponent('#header',            '/components/header.html'),
         loadComponent('.sidenav',           '/components/navbar.html'),
@@ -867,25 +798,15 @@ document.addEventListener('DOMContentLoaded', async () => {
         loadComponent('#page-settings',     '/pages/settings.html'),
     ]);
 
-    /* ── Step 2: wire all listeners (DOM is fully populated now) ── */
     wireWindowControls();
     wireMobileMenu();
     wireNav();
     wirePopover();
-
-    /* productivity page — already the active page on first load */
     wireProductivityPage();
-
-    /* break page is loaded above so wire it immediately too */
     wireBreakPage();
-
-    /* call page controls */
     wireCallPage();
 
-    /* ── Step 3: populate user info ── */
     loadUser();
-
-    /* ── Step 4: initial renders ── */
     renderWeek();
     renderTasks();
     renderTimers();
@@ -894,6 +815,5 @@ document.addEventListener('DOMContentLoaded', async () => {
     updateRing();
     updateGlance();
 
-    /* ── Step 5: check Tauri for an active session ── */
     startup();
 });
