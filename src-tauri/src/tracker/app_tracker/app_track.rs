@@ -4,7 +4,15 @@ use std::time::Duration;
 use chrono::{Utc, Local};
 
 use crate::db::core::DbManager;
+use crate::timestamp::TimestampManager;
 use crate::tracker::app_tracker::window::{get_current_active_window, ActiveWindowInfo};
+
+pub fn get_timestamps() -> (String, String, String) {
+    let org_ts = TimestampManager::org_timestamp();
+    let aps_ts = TimestampManager::aps_timestamp();
+    let tz     = TimestampManager::get_org_timezone();
+    (org_ts, aps_ts, tz)
+}
 
 pub fn start_active_window_tracker(
     db: Arc<DbManager>,
@@ -46,8 +54,9 @@ pub fn start_active_window_tracker(
 
                         // 4. Save previous window record
                         let conn = db.conn.lock().unwrap();
-                        let utc_now = Utc::now().to_rfc3339();
-                        let tz = Local::now().format("%Z").to_string();
+                        let (org_ts, aps_ts, tz) = get_timestamps();
+                        let start_str = TimestampManager::convert_to_org_time(start_time);
+                        let end_str   = TimestampManager::convert_to_org_time(end_time);
                         let _ = conn.execute(
                                     "INSERT INTO active_window
                                     (window_title, process_name, start_time, end_time, duration_sec, created_at, updated_at, apscreatedatetime, apsupdatedatetime, timezone)
@@ -55,13 +64,13 @@ pub fn start_active_window_tracker(
                                     rusqlite::params![
                                         prev.window_title,
                                         prev.process_name,
-                                        start_time.format("%Y-%m-%d %H:%M:%S").to_string(),
-                                        end_time.format("%Y-%m-%d %H:%M:%S").to_string(),
+                                        start_str,
+                                        end_str,
                                         duration_sec,
-                                        now, // created_at
-                                        now, // updated_at
-                                        utc_now,
-                                        utc_now,
+                                        org_ts,
+                                        org_ts,
+                                        aps_ts,
+                                        aps_ts,
                                         tz
                                     ],
                                 );

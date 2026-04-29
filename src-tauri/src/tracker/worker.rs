@@ -13,356 +13,252 @@ use std::sync::{
     Mutex,
 };
 use std::thread;
+use tauri::Emitter;
 use std::time::{Duration as StdDuration, Instant};
-use chrono::{Local, Utc, DateTime};
+use chrono::{Utc, DateTime};
 use crate::tracker::config::{IDLE_ACTIVITY_THRESHOLD, IDLE_BREAK_THRESHOLD};
 use crate::tracker::audio::mic_detector::MicrophoneDetector;
 use crate::timestamp::TimestampManager;
-
-// Import the input monitor
 use crate::tracker::input::{InputMonitor, create_input_monitor};
 
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SessionStats {
+    pub idle_seconds:      i64,
+    pub break_seconds:     i64,
+    pub keystroke_count:   i64,
+    pub mouse_click_count: i64,
+    pub mouse_move_count:  i64,
+}
+
+impl SessionStats {
+    pub fn zero() -> Self {
+        Self {
+            idle_seconds: 0, break_seconds: 0,
+            keystroke_count: 0, mouse_click_count: 0, mouse_move_count: 0,
+        }
+    }
+}
+
+fn emit_stats(app: &tauri::AppHandle, stats: &SessionStats) {
+    if let Err(e) = app.emit("session-stats-update", stats) {
+        log::warn!("[STATS] Emit failed: {}", e);
+    }
+}
+
 pub fn get_timestamps() -> (String, String, String) {
-    let org_ts = TimestampManager::org_timestamp();
-    let aps_ts = TimestampManager::aps_timestamp();
-    let tz     = TimestampManager::get_org_timezone();
-    (org_ts, aps_ts, tz)
-}
-pub struct ActivityTracker {
-    _config: TrackerConfig,
-    running: Arc<AtomicBool>,
-    event_tx: Sender<TrackEvent>,
-    _storage_writer: StorageWriter,
-    _idle_detector: Arc<Mutex<Box<dyn IdleDetector>>>,
-    input_monitor: Arc<Mutex<Box<dyn InputMonitor>>>,
-    worker_handle: Option<thread::JoinHandle<()>>,
+    (
+        TimestampManager::org_timestamp(),
+        TimestampManager::aps_timestamp(),
+        TimestampManager::get_org_timezone(),
+    )
 }
 
+// ─────────────────────────────────────────────────────────────
+// INACTIVITY STATE
+//
+// Single shared struct that tracks ONE inactivity period at a time.
+// All writes to user_inactivity go through write_inactivity().
+// write_inactivity() has a dedup guard — it checks if the exact same
+// (start_time, end_time) row already exists before inserting.
+//
+// This means even if the code accidentally calls write_inactivity
+// twice for the same period, the DB gets only ONE row.
+// ─────────────────────────────────────────────────────────────
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum InactivityReason {
+    /// No keyboard / mouse input for X seconds
+    Idle,
+    /// OS screen-lock event received (Windows: WTS_SESSION_LOCK)
+    ScreenLock,
+    /// App was closed / crashed and restarted (startup recovery)
+    SystemOffline,
+}
 
-impl ActivityTracker {
+impl InactivityReason {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            InactivityReason::Idle          => "Unavailability",
+            InactivityReason::ScreenLock    => "Screen locked",
+            InactivityReason::SystemOffline => "System offline / lock / sleep",
+        }
+    }
+}
 
-    pub fn new(
-        db: Arc<DbManager>,
-        config: Option<TrackerConfig>,
-        idle_detector: Option<Box<dyn IdleDetector>>,
-    ) -> crate::Result<Self> {
-        let config = config.unwrap_or_default();
-        
-        let idle_detector = idle_detector.unwrap_or_else(|| create_idle_detector());
-        let idle_detector = Arc::new(Mutex::new(idle_detector));
-        
-        let persister = DbActivityPersister::new(Arc::clone(&db));
-        let storage_writer = StorageWriter::new(persister);
-        
-        let (event_tx, event_rx) = unbounded();
-        let running = Arc::new(AtomicBool::new(true));
-        
-        // Create input monitor (system-level hooks)
-        let input_monitor = create_input_monitor(event_tx.clone(), Arc::clone(&running));
-        let input_monitor = Arc::new(Mutex::new(input_monitor));
-        
-        // Start the input monitor
-        {
-            let mut monitor = input_monitor.lock().unwrap();
-            monitor.start()
-                .map_err(|e| crate::Error::WorkerError(format!("Failed to start input monitor: {}", e)))?;
+#[derive(Debug, Default)]
+pub struct InactivityState {
+    pub active:    bool,
+    pub start:     Option<DateTime<Utc>>,
+    pub confirmed: bool,
+    pub reason:    Option<InactivityReason>,
+    /// True once write_inactivity() has inserted this period.
+    /// Prevents the startup path from writing the same period again.
+    pub written:   bool,
+}
+
+impl InactivityState {
+    /// Open a new inactivity period.
+    /// If one is already open, only upgrade Idle → ScreenLock (never open twice).
+    pub fn begin(&mut self, when: DateTime<Utc>, reason: InactivityReason) {
+        if self.active {
+            // Upgrade reason if we get a stronger signal
+            if reason == InactivityReason::ScreenLock
+                && self.reason != Some(InactivityReason::ScreenLock)
+            {
+                self.reason = Some(InactivityReason::ScreenLock);
+                log::debug!("[INACTIVITY] Reason upgraded to ScreenLock");
+            }
+            return; // already tracking — don't reset start time
+        }
+        *self = InactivityState {
+            active:    true,
+            start:     Some(when),
+            confirmed: false,
+            reason:    Some(reason.clone()),
+            written:   false,
+        };
+        log::info!("[INACTIVITY] Period opened at {} ({:?})", when, reason);
+    }
+
+    pub fn confirm(&mut self) {
+        if !self.confirmed {
+            self.confirmed = true;
+            log::info!("[INACTIVITY] Period confirmed (threshold reached)");
+        }
+    }
+
+    /// Close the period and return data for a DB write, or None if:
+    ///  - not active
+    ///  - never confirmed (too short)
+    ///  - already written
+    pub fn close(&mut self, now: DateTime<Utc>) -> Option<PeriodData> {
+        if !self.active {
+            return None;
         }
 
-        // NEW: Start unified inactivity tracker (180 seconds)
-        start_unified_inactivity_tracker(
-            Arc::clone(&running),
-            Arc::clone(&idle_detector),
-            Arc::clone(&db),
-        );
-        
-        log::info!("[TRACKER] System-level input monitoring started");
-        
-        let worker_config = config.clone();
-        let worker_storage = storage_writer.clone();
-        let worker_idle = Arc::clone(&idle_detector);
-        let worker_running = Arc::clone(&running);
-        let db_weak = Arc::downgrade(&db);
-        
-        let handle = thread::spawn(move || {
-            Self::run_worker(
-                event_rx,
-                worker_storage,
-                worker_idle,
-                worker_running,
-                worker_config,
-                db_weak,
-            );
-        });
-        
+        let start     = self.start.unwrap_or(now);
+        let confirmed = self.confirmed;
+        let written   = self.written;
+        let reason    = self.reason.clone();
+
+        // Always reset state
+        *self = InactivityState::default();
+
+        if !confirmed {
+            log::debug!("[INACTIVITY] Period closed — never confirmed, not recording");
+            return None;
+        }
+        if written {
+            log::debug!("[INACTIVITY] Period closed — already written, skipping");
+            return None;
+        }
+
+        let dur = now.signed_duration_since(start).num_seconds().max(0);
+        Some(PeriodData { start, end: now, duration_sec: dur, reason })
+    }
+}
+
+pub struct PeriodData {
+    pub start:        DateTime<Utc>,
+    pub end:          DateTime<Utc>,
+    pub duration_sec: i64,
+    pub reason:       Option<InactivityReason>,
+}
+
+/// Shared handle so commands.rs can read/close the period on startup.
+pub type SharedInactivityState = Arc<Mutex<InactivityState>>;
+
+// ─────────────────────────────────────────────────────────────
+// ACTIVITY TRACKER
+// ─────────────────────────────────────────────────────────────
+
+pub struct ActivityTracker {
+    _config:         TrackerConfig,
+    running:         Arc<AtomicBool>,
+    event_tx:        Sender<TrackEvent>,
+    _storage_writer: StorageWriter,
+    _idle_detector:  Arc<Mutex<Box<dyn IdleDetector>>>,
+    input_monitor:   Arc<Mutex<Box<dyn InputMonitor>>>,
+    worker_handle:   Option<thread::JoinHandle<()>>,
+    /// Exposed to commands.rs for startup-path recovery only.
+    pub inactivity:  SharedInactivityState,
+}
+
+impl ActivityTracker {
+    pub fn new(
+        db:            Arc<DbManager>,
+        config:        Option<TrackerConfig>,
+        idle_detector: Option<Box<dyn IdleDetector>>,
+        app_handle:    tauri::AppHandle, 
+    ) -> crate::Result<Self> {
+        let config        = config.unwrap_or_default();
+        let idle_detector = idle_detector.unwrap_or_else(|| create_idle_detector());
+        let idle_detector = Arc::new(Mutex::new(idle_detector));
+        let persister     = DbActivityPersister::new(Arc::clone(&db));
+        let storage       = StorageWriter::new(persister);
+        let (tx, rx)      = unbounded::<TrackEvent>();
+        let running       = Arc::new(AtomicBool::new(true));
+        let inactivity: SharedInactivityState =
+            Arc::new(Mutex::new(InactivityState::default()));
+
+        // Start input monitor
+        let input_monitor = create_input_monitor(tx.clone(), Arc::clone(&running));
+        let input_monitor = Arc::new(Mutex::new(input_monitor));
+        {
+            let mut m = input_monitor.lock().unwrap();
+            m.start().map_err(|e| crate::Error::WorkerError(
+                format!("Failed to start input monitor: {}", e)
+            ))?;
+        }
+
+        // Spawn worker thread
+        let worker_handle = {
+            let cfg       = config.clone();
+            let storage2  = storage.clone();
+            let idle2     = Arc::clone(&idle_detector);
+            let running2  = Arc::clone(&running);
+            let db_weak   = Arc::downgrade(&db);
+            let inact2    = Arc::clone(&inactivity);
+
+            thread::spawn(move || {
+                run_worker(rx, storage2, idle2, running2, cfg, db_weak, inact2, app_handle);
+            })
+        };
+
+        log::info!("[TRACKER] Started");
+
         Ok(Self {
             _config: config,
             running,
-            event_tx,
-            _storage_writer: storage_writer,
+            event_tx: tx,
+            _storage_writer: storage,
             _idle_detector: idle_detector,
             input_monitor,
-            worker_handle: Some(handle),
+            worker_handle: Some(worker_handle),
+            inactivity,
         })
     }
-    
-    fn run_worker(
-        event_rx: Receiver<TrackEvent>,
-        storage: StorageWriter,
-        idle_detector: Arc<Mutex<Box<dyn IdleDetector>>>,
-        running: Arc<AtomicBool>,
-        config: TrackerConfig,
-        db_weak: std::sync::Weak<DbManager>,
-    ) {
-        let mut aggregator = MinuteAggregator::new(config.summary_window_minutes);
 
-        let idle_activity_threshold = IDLE_ACTIVITY_THRESHOLD; // e.g. 6s
-        let break_threshold = IDLE_BREAK_THRESHOLD;           // e.g. 5 min
+    pub fn record_key(&self)         -> crate::Result<()> { Ok(()) }
+    pub fn record_mouse_move(&self)  -> crate::Result<()> { Ok(()) }
+    pub fn record_mouse_click(&self) -> crate::Result<()> { Ok(()) }
 
-        let mut last_idle_check = Instant::now();
-        let idle_check_interval = StdDuration::from_secs(1);
-
-        let mut currently_idle = false;
-        let mut idle_start_time: Option<DateTime<Utc>> = None;
-        let mut break_confirmed = false;
-
-        let recv_timeout = StdDuration::from_millis(100);
-        let (org_ts, aps_ts, tz) = get_timestamps();
-
-        log::info!(
-            "[WORKER] Worker thread started (idle={}s, break={}s)",
-            idle_activity_threshold.as_secs(),
-            break_threshold.as_secs()
-        );
-
-        while running.load(Ordering::Acquire) {
-            let mut had_activity = false;
-
-            // -------------------- EVENT PROCESSING --------------------
-            loop {
-                match event_rx.recv_timeout(recv_timeout) {
-                    Ok(event) => match event {
-                        TrackEvent::Key | TrackEvent::MouseMove | TrackEvent::MouseClick => {
-                            aggregator.add_event(event);
-                            had_activity = true;
-                        }
-                        TrackEvent::IdleTick => {
-                            aggregator.add_event(event);
-                        }
-                    },
-                    Err(_) => break,
-                }
-            }
-
-            // -------------------- REAL ACTIVITY --------------------
-            if had_activity {
-                if let Ok(mut detector) = idle_detector.lock() {
-                    detector.record_activity();
-                }
-
-                /*if currently_idle {
-                    log::debug!("[IDLE] User became ACTIVE");
-                }*/
-            }
-
-            // -------------------- IDLE CHECK (1s) --------------------
-            if last_idle_check.elapsed() >= idle_check_interval {
-                last_idle_check = Instant::now();
-
-                if let Ok(detector) = idle_detector.lock() {
-                    let idle_time = detector.get_idle_time();
-
-                    // -------- USER IS IDLE --------
-                    if idle_time >= idle_activity_threshold {
-                        if !currently_idle {
-                            let now = Utc::now();
-                            currently_idle = true;
-                            idle_start_time = Some(now);
-                            break_confirmed = false;
-
-                            /*log::info!(
-                                "[IDLE] User became IDLE at {} ({}s since last activity)",
-                                now,
-                                idle_time.as_secs()
-                            );*/
-                        }
-
-                        // Count idle seconds
-                        aggregator.add_event(TrackEvent::IdleTick);
-
-                        // -------- BREAK CONFIRMATION (5 min rule) --------
-                        if !break_confirmed && idle_time >= break_threshold {
-                            break_confirmed = true;
-
-                            if let Some(start) = idle_start_time {
-                                log::info!(
-                                    "[IDLE] Unavailability confirmed ({} min). Started at {}",
-                                    break_threshold.as_secs() / 60,
-                                    start
-                                );
-                            }
-                        }
-                    }
-                    // -------- USER BECAME ACTIVE AGAIN --------
-                    else {
-                        if currently_idle {
-                            let active_time = Utc::now();
-
-                            if let Some(start_time) = idle_start_time {
-                                let mic_in_use = MicrophoneDetector::is_microphone_active();
-                                let mic_flag = if mic_in_use { 1 } else { 0 };
-                                let duration = active_time.signed_duration_since(start_time);
-                                let duration_seconds = duration.num_seconds().max(0);
-                                
-
-                                if break_confirmed {
-                                    let start_str = TimestampManager::convert_to_org_time(start_time);
-                                    let end_str   = TimestampManager::convert_to_org_time(active_time);
-
-                                    if let Some(db) = db_weak.upgrade() {
-                                        let conn = db.conn.lock().unwrap();
-                                        let utc_now = Utc::now().to_rfc3339();
-                                        let tz = Local::now().format("%Z").to_string();
-                                        let _ = conn.execute(
-                                            "INSERT INTO user_inactivity
-                                            (inactive_start_time, inactive_end_time, inactivity_by, duration, is_microphone_in_use, created_at, updated_at, apscreatedatetime, apsupdatedatetime, timezone)
-                                            VALUES (?1, ?2, 'Unavailability', ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-                                            rusqlite::params![
-                                                start_str,
-                                                end_str,
-                                                duration_seconds,
-                                                mic_flag,
-                                                org_ts,
-                                                org_ts,
-                                                aps_ts,
-                                                aps_ts,
-                                                tz
-                                            ],
-                                        );
-
-                                        log::info!(
-                                            "[IDLE] Logged unavailability: {} seconds ({} → {})",
-                                            duration_seconds,
-                                            start_str,
-                                            end_str
-                                        );
-                                    }
-                                }
-                            }
-                        }
-
-                        // Reset idle state
-                        currently_idle = false;
-                        idle_start_time = None;
-                        break_confirmed = false;
-                    }
-                }
-            }
-
-            // -------------------- MINUTE FLUSH --------------------
-            if aggregator.should_flush() {
-                if let Some(minute_data) = aggregator.flush() {
-                    log::info!(
-                        "[MINUTE] Minute {}: keys={}, moves={}, clicks={}, idle={}s",
-                        minute_data.minute_start,
-                        minute_data.keystroke_count,
-                        minute_data.mouse_move_count,
-                        minute_data.mouse_click_count,
-                        minute_data.idle_seconds
-                    );
-
-                    match storage.insert_minute(minute_data.clone()) {
-                        Ok(id) => {
-                            aggregator.store_minute_with_id(id, minute_data);
-
-                            let recent_entries = aggregator.get_recent_for_summary();
-                            if recent_entries.len() >= config.summary_window_minutes {
-                                if let Some(summary) =
-                                    SummaryGenerator::generate(&recent_entries)
-                                {
-                                    let minute_ids = summary.minute_ids.clone();
-
-                                    log::info!(
-                                        "[SUMMARY] Generating summary from {} minutes",
-                                        recent_entries.len()
-                                    );
-
-                                    if storage.insert_summary(summary).is_ok() {
-                                        if storage
-                                            .delete_minutes(minute_ids.clone())
-                                            .is_ok()
-                                        {
-                                            aggregator
-                                                .clear_processed_minutes(&minute_ids);
-                                            log::info!(
-                                                "[SUMMARY] Cleaned up {} minute records",
-                                                minute_ids.len()
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                        Err(e) => {
-                            log::error!(
-                                "[MINUTE] Failed to insert minute data: {}",
-                                e
-                            );
-                        }
-                    }
-                }
-            }
-        }
-
-        log::info!("[WORKER] Worker thread stopped");
-    }
-
-    
-    // These methods are now obsolete since we use system hooks
-    // But keep them for backward compatibility
-    pub fn record_key(&self) -> crate::Result<()> {
-        // System hooks handle this automatically
-        Ok(())
-    }
-    
-    pub fn record_mouse_move(&self) -> crate::Result<()> {
-        // System hooks handle this automatically
-        Ok(())
-    }
-    
-    pub fn record_mouse_click(&self) -> crate::Result<()> {
-        // System hooks handle this automatically
-        Ok(())
-    }
-    
     pub fn stop(&mut self) -> crate::Result<()> {
-        log::info!("[TRACKER] Stopping tracker...");
-        
-        // Stop input monitor first
+        log::info!("[TRACKER] Stopping…");
         {
-            let mut monitor = self.input_monitor.lock().unwrap();
-            monitor.stop()
-                .map_err(|e| {
-                    log::error!("[TRACKER] Failed to stop input monitor: {}", e);
-                    crate::Error::WorkerError(format!("Failed to stop input monitor: {}", e))
-                })?;
+            let mut m = self.input_monitor.lock().unwrap();
+            m.stop().map_err(|e| crate::Error::WorkerError(
+                format!("Failed to stop input monitor: {}", e)
+            ))?;
         }
-        
-        // Then stop worker thread
-        self.running.store(false, Ordering::Relaxed);
-        
-        if let Some(handle) = self.worker_handle.take() {
-            handle.join()
-                .map_err(|e| {
-                    log::error!("[TRACKER] Worker thread join failed: {:?}", e);
-                    crate::Error::WorkerError(format!("Join failed: {:?}", e))
-                })?;
+        self.running.store(false, Ordering::SeqCst);
+        if let Some(h) = self.worker_handle.take() {
+            let _ = h.join();
         }
-        
-        log::info!("[TRACKER] ✅ Tracker stopped successfully");
+        log::info!("[TRACKER] ✅ Stopped");
         Ok(())
     }
-    
+
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::Relaxed)
     }
@@ -388,68 +284,288 @@ impl Drop for ActivityTracker {
     }
 }
 
-// ===================================================================
-// NEW: Unified Inactivity Tracker (≥ 180 seconds) - Same on all OS
-// ===================================================================
-fn start_unified_inactivity_tracker(
-    running: Arc<AtomicBool>,
-    idle_detector: Arc<Mutex<Box<dyn IdleDetector>>>,
-    db: Arc<DbManager>,
+// ─────────────────────────────────────────────────────────────
+// WORKER
+// ─────────────────────────────────────────────────────────────
+
+fn run_worker(
+    event_rx:   Receiver<TrackEvent>,
+    storage:    StorageWriter,
+    idle_det:   Arc<Mutex<Box<dyn IdleDetector>>>,
+    running:    Arc<AtomicBool>,
+    config:     TrackerConfig,
+    db_weak:    std::sync::Weak<DbManager>,
+    inactivity: SharedInactivityState,
+    app:        tauri::AppHandle,   // ← new parameter
 ) {
-    thread::spawn(move || {
-        const THRESHOLD_SEC: u64 = 180;   // Change to 90 if you want 90 seconds
+    let mut aggregator          = MinuteAggregator::new(config.summary_window_minutes);
+    let mut last_idle_check     = Instant::now();
+    let idle_check_interval     = StdDuration::from_secs(1);
+    let recv_timeout            = StdDuration::from_millis(100);
+    let idle_activity_threshold = IDLE_ACTIVITY_THRESHOLD;
+    let break_threshold         = IDLE_BREAK_THRESHOLD;
 
-        let mut inactivity_start: Option<DateTime<Utc>> = None;
+    // Track last emitted values — only emit when something changes
+    let mut last_emitted = SessionStats::zero();
+    // Track cumulative idle for this session (incremented each second)
+    let mut session_idle_sec: i64 = 0;
+    // Keystroke/click counts from current minute (reset on minute flush)
+    let mut total_keystrokes:  i64 = 0;
+    let mut total_clicks:      i64 = 0;
+    let mut total_moves:       i64 = 0;
 
-        while running.load(Ordering::Relaxed) {
-            let idle = idle_detector.lock().unwrap().get_idle_time();
+    log::info!("[WORKER] Started — idle={}s break={}s",
+        idle_activity_threshold.as_secs(), break_threshold.as_secs());
 
-            if idle.as_secs() >= THRESHOLD_SEC {
-                if inactivity_start.is_none() {
-                    inactivity_start = Some(Utc::now());
+    while running.load(Ordering::Acquire) {
+
+        // ── Drain event queue ─────────────────────────────────────────
+        let mut had_activity    = false;
+        let mut new_keystrokes  = 0i64;
+        let mut new_clicks      = 0i64;
+        let mut new_moves       = 0i64;
+
+        loop {
+            match event_rx.recv_timeout(recv_timeout) {
+                Ok(ev) => {
+                    match ev {
+                        TrackEvent::Key        => { had_activity = true; new_keystrokes += 1; }
+                        TrackEvent::MouseClick => { had_activity = true; new_clicks     += 1; }
+                        TrackEvent::MouseMove  => { had_activity = true; new_moves      += 1; }
+                        TrackEvent::IdleTick   => {}
+                    }
+                    aggregator.add_event(ev);
                 }
-            } else if let Some(start) = inactivity_start.take() {
-                let end = Utc::now();
-                let duration_sec = (end - start).num_seconds().max(0) as u64;
+                Err(_) => break,
+            }
+        }
 
-                if duration_sec >= THRESHOLD_SEC {
-                    let _ = save_inactivity_record(&db, start, end, duration_sec);
+        if had_activity {
+            total_keystrokes += new_keystrokes;
+            total_clicks     += new_clicks;
+            total_moves      += new_moves;
+
+            if let Ok(mut det) = idle_det.lock() {
+                det.record_activity();
+            }
+        }
+
+        // ── Idle check (1 Hz) ─────────────────────────────────────────
+        if last_idle_check.elapsed() >= idle_check_interval {
+            last_idle_check = Instant::now();
+
+            let idle_time = idle_det.lock()
+                .map(|d| d.get_idle_time())
+                .unwrap_or(StdDuration::ZERO);
+
+            let user_is_idle = idle_time >= idle_activity_threshold;
+
+            if user_is_idle {
+                let inferred_start = Utc::now()
+                    - chrono::Duration::seconds(idle_time.as_secs() as i64);
+
+                let mut state = inactivity.lock().unwrap();
+                state.begin(inferred_start, InactivityReason::Idle);
+
+                if idle_time >= break_threshold {
+                    state.confirm();
+                }
+                drop(state);
+
+                aggregator.add_event(TrackEvent::IdleTick);
+
+                // Increment our local idle counter (1 second per check)
+                session_idle_sec += 1;
+
+            } else if had_activity {
+                // User became active — close any open inactivity period
+                let now = Utc::now();
+                let period = inactivity.lock().unwrap().close(now);
+                if let Some(p) = period {
+                    if let Some(db) = db_weak.upgrade() {
+                        write_inactivity(&db, &p);
+                    }
                 }
             }
 
-            thread::sleep(StdDuration::from_secs(5));
+            // ── Emit stats update ONLY if values changed ──────────────
+            // This is the key: we compare before emitting.
+            // No change = no event = zero CPU for JS.
+            let break_sec = fetch_break_seconds_fast(&db_weak);
+
+            let current = SessionStats {
+                idle_seconds:      session_idle_sec,
+                break_seconds:     break_sec,
+                keystroke_count:   total_keystrokes,
+                mouse_click_count: total_clicks,
+                mouse_move_count:  total_moves,
+            };
+
+            let changed =
+                current.idle_seconds      != last_emitted.idle_seconds      ||
+                current.break_seconds     != last_emitted.break_seconds      ||
+                current.keystroke_count   != last_emitted.keystroke_count    ||
+                current.mouse_click_count != last_emitted.mouse_click_count;
+                // Note: mouse_move_count excluded — moves are too frequent,
+                // not worth triggering a UI re-render every second
+
+            if changed {
+                emit_stats(&app, &current);
+                last_emitted = SessionStats {
+                    idle_seconds:      current.idle_seconds,
+                    break_seconds:     current.break_seconds,
+                    keystroke_count:   current.keystroke_count,
+                    mouse_click_count: current.mouse_click_count,
+                    mouse_move_count:  current.mouse_move_count,
+                };
+            }
         }
-    });
+
+        // ── Minute flush ──────────────────────────────────────────────
+        if aggregator.should_flush() {
+            if let Some(minute) = aggregator.flush() {
+                log::info!(
+                    "[MINUTE] {} keys={} moves={} clicks={} idle={}s",
+                    minute.minute_start,
+                    minute.keystroke_count,
+                    minute.mouse_move_count,
+                    minute.mouse_click_count,
+                    minute.idle_seconds
+                );
+
+                if let Ok(id) = storage.insert_minute(minute.clone()) {
+                    aggregator.store_minute_with_id(id, minute);
+                    let recent = aggregator.get_recent_for_summary();
+                    if recent.len() >= config.summary_window_minutes {
+                        if let Some(summary) = SummaryGenerator::generate(&recent) {
+                            let ids = summary.minute_ids.clone();
+                            if storage.insert_summary(summary).is_ok()
+                                && storage.delete_minutes(ids.clone()).is_ok()
+                            {
+                                aggregator.clear_processed_minutes(&ids);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    } // while
+
+    // ── Shutdown ──────────────────────────────────────────────────────
+    let now = Utc::now();
+    let period = inactivity.lock().unwrap().close(now);
+    if let Some(p) = period {
+        if let Some(db) = db_weak.upgrade() {
+            write_inactivity(&db, &p);
+        }
+    }
+
+    log::info!("[WORKER] Stopped");
 }
 
-fn save_inactivity_record(
-    db: &Arc<DbManager>,
-    start: DateTime<Utc>,
-    end: DateTime<Utc>,
-    duration_sec: u64,
-) -> Result<(), rusqlite::Error> {
-    let conn = db.conn.lock().unwrap();
-    
-    let (org_ts, aps_ts, tz) = get_timestamps();
-    let start_time = TimestampManager::convert_to_org_time(start);
-    let end_time   = TimestampManager::convert_to_org_time(end);
+// ─────────────────────────────────────────────────────────────
+// DB WRITE — the ONE place that inserts into user_inactivity
+//
+// Has a dedup guard: checks (start_time, end_time) before inserting.
+// Even if called twice with identical data, only 1 row is written.
+// ─────────────────────────────────────────────────────────────
 
-    conn.execute(
-        "INSERT INTO user_inactivity 
-         (inactive_start_time, inactive_end_time, inactivity_by, duration, 
+pub fn write_inactivity(db: &Arc<DbManager>, period: &PeriodData) {
+    if period.duration_sec <= 0 {
+        return;
+    }
+
+    let reason_str = period.reason.as_ref()
+        .map(|r| r.as_str())
+        .unwrap_or("System offline / lock / sleep");
+
+    let (org_ts, aps_ts, tz) = get_timestamps();
+    let start_str = TimestampManager::convert_to_org_time(period.start);
+    let end_str   = TimestampManager::convert_to_org_time(period.end);
+
+    let conn = match db.conn.lock() {
+        Ok(c)  => c,
+        Err(e) => { log::error!("[INACTIVITY] Lock error: {}", e); return; }
+    };
+
+    // ── Dedup guard: if exact same period exists, skip ────────────────
+    let already_exists: bool = conn.query_row(
+        "SELECT COUNT(*) FROM user_inactivity
+         WHERE inactive_start_time = ?1
+           AND ABS(strftime('%s', inactive_end_time) - strftime('%s', ?2)) < 60",
+        rusqlite::params![start_str, end_str],
+        |row| row.get::<_, i64>(0),
+    ).unwrap_or(0) > 0;
+
+    if already_exists {
+        log::warn!(
+            "[INACTIVITY] Dedup: skipping {} → {} — row already exists",
+            start_str, end_str
+        );
+        return;
+    }
+
+    let mic = MicrophoneDetector::is_microphone_active() as i32;
+
+    match conn.execute(
+        "INSERT INTO user_inactivity
+         (inactive_start_time, inactive_end_time, inactivity_by, duration,
+          is_microphone_in_use,
           created_at, updated_at, apscreatedatetime, apsupdatedatetime, timezone)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![
-            start_time, 
-            end_time,  
-            "inactive_or_locked",
-            duration_sec as i64,
-            org_ts,
-            org_ts,
-            aps_ts,
-            aps_ts, 
-            tz
+            start_str, end_str, reason_str, period.duration_sec,
+            mic,
+            org_ts, org_ts, aps_ts, aps_ts, tz
         ],
-    )?;
-    Ok(())
+    ) {
+        Ok(_) => log::info!(
+            "[INACTIVITY] ✅ '{}' {} → {} ({}s)",
+            reason_str, start_str, end_str, period.duration_sec
+        ),
+        Err(e) => log::error!("[INACTIVITY] Write failed: {}", e),
+    }
+}
+
+// ─────────────────────────────────────────────────────────────
+// PUBLIC HELPER — used by commands.rs startup path
+// ─────────────────────────────────────────────────────────────
+
+pub fn make_period(
+    start:  DateTime<Utc>,
+    end:    DateTime<Utc>,
+    reason: Option<InactivityReason>,
+) -> PeriodData {
+    PeriodData {
+        start,
+        end,
+        duration_sec: end.signed_duration_since(start).num_seconds().max(0),
+        reason,
+    }
+}
+
+fn fetch_break_seconds_fast(db_weak: &std::sync::Weak<DbManager>) -> i64 {
+    let Some(db) = db_weak.upgrade() else { return 0; };
+    let Ok(conn) = db.conn.lock() else { return 0; };
+
+    // Get the current session's checkin_time first
+    let checkin: Option<String> = conn.query_row(
+        "SELECT checkin_time FROM user_checkin
+         WHERE checkout_time IS NULL ORDER BY id DESC LIMIT 1",
+        [], |r| r.get(0),
+    ).unwrap_or(None);
+
+    let Some(checkin) = checkin else { return 0; };
+
+    conn.query_row(
+        // strftime arithmetic is handled entirely in SQLite — no Rust math
+        "SELECT COALESCE(SUM(
+            strftime('%s', breakout_time) - strftime('%s', breakin_time)
+         ), 0)
+         FROM user_breaks
+         WHERE breakin_time  >= ?1
+           AND breakout_time IS NOT NULL",
+        [&checkin],
+        |r| r.get::<_, i64>(0),
+    ).unwrap_or(0)
 }
